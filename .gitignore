@@ -1,5 +1,7 @@
 # ignore training data file
 data/
+result/
+
 
 #ignore py cache
 __pycache__/

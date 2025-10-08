@@ -44,6 +44,10 @@ def load_data(data_root_path, geometry_path, batch_size=64, train_split=0.8):
     combined_data = np.vstack(all_data)
     labels = np.array(expanded_label)
     print(f"Data converting complete! Data shape: {combined_data.shape}, Labels shape: {labels.shape}")
+
+    if combined_data.shape[1] == 33:
+        combined_data = combined_data[:, 6:]
+        print(f"Extracted joint subset: {combined_data.shape[1]} dimensions (excluding pelvis)")
     
     label_encoder = LabelEncoder()
     encoded_labels = label_encoder.fit_transform(labels)
@@ -71,10 +75,10 @@ class BiomechPriorVAE(nn.Module):
         self.latent_dim = latent_dim
 
         self.encoder = nn.Sequential(
-            nn.BatchNorm1d(num_dofs),
+            nn.LayerNorm(num_dofs),
             nn.Linear(num_dofs, hidden_dim),
             nn.LeakyReLU(),
-            nn.BatchNorm1d(hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
             nn.LeakyReLU(),
@@ -144,7 +148,7 @@ class BiomechPriorVAETrainer:
         epoch_recon_loss = 0
         epoch_kl_loss = 0
 
-        for batch_idx, (data,) in enumerate(tqdm(train_loader, desc="Training")):
+        for batch_idx, (data, _) in enumerate(tqdm(train_loader, desc="Training")):
             data = data.to(self.device)
             optimizer.zero_grad()
 
@@ -206,7 +210,7 @@ class BiomechPriorVAETrainer:
         val_kl_loss = 0
 
         with torch.no_grad():
-            for (data,) in val_loader:
+            for (data, _) in val_loader:
                 data = data.to(self.device)
 
                 recon_data, mu, logvar = self.model(data)
@@ -229,7 +233,7 @@ class BiomechPriorVAETrainer:
         result = []
 
         with torch.no_grad():
-            for i, (data,) in enumerate(val_loader):
+            for i, (data, _) in enumerate(val_loader):
                 data = data.to(self.device)
                 recon_data, mu, logvar = self.model(data)
                 
@@ -388,7 +392,7 @@ def train_model(
         output_path,
         latent_dim=20,
         batch_size=64,
-        num_dofs=33,
+        num_dofs=27,
         num_epochs=100,
         learning_rate=1e-3,
         beta=1.0,
@@ -442,7 +446,7 @@ def test_model(
         scaler_path,
         latent_dim=20,
         batch_size=64,
-        num_dofs=33,
+        num_dofs=27,
         train_split=0.8,
 ):
     if not os.path.exists(model_path):
@@ -506,8 +510,11 @@ def visualize_result(model, trainer, val_loader, scaler):
     recon_poses = result['recon']
     
     sample_idx = np.random.randint(len(original_poses))
-    original_pose = original_poses[sample_idx]
+    original_pose = original_poses[sample_idx] #(27,)
+    original_pose = np.hstack([np.zeros(6, dtype=original_pose.dtype), original_pose])
     recon_pose = recon_poses[sample_idx]
+    recon_pose = np.hstack([np.zeros(6, dtype=recon_pose.dtype), recon_pose])
+
 
     visualizer = BioPrioVAEVisualizer()
     visualizer.compare_poses(original_pose=original_pose, recon_pose=recon_pose)
@@ -521,7 +528,7 @@ def analyze_latent_space(
         analysis_path,
         latent_dim=20,
         batch_size=64,
-        num_dofs=33,
+        num_dofs=27,
         train_split=0.8,
 ):
     analysis_path = os.path.join(analysis_path, "latent_analysis")
@@ -563,12 +570,13 @@ def analyze_latent_space(
     return latent_rep, interpolated_poses
 
 if __name__ == "__main__":
-    data_root_path = "../data/Dataset"
-    output_path = "../result/model/"
-    geometry_path = "../data/Geometry/"
-    analysis_path = "../result/"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_root_path = os.path.join(script_dir, "../data/Dataset")
+    output_path = os.path.join(script_dir, "../result/model/")
+    geometry_path = os.path.join(script_dir, "../data/Geometry/")
+    analysis_path = os.path.join(script_dir, "../result/")
 
-    mode = "analyze" #"train" / "test" / "analyze"
+    mode = "test" #"train" / "test" / "analyze"
 
     if mode == "train":
         print("Starting training...")
@@ -578,7 +586,7 @@ if __name__ == "__main__":
             output_path=output_path,
             latent_dim=20,
             batch_size=256,
-            num_dofs=33,
+            num_dofs=27, #33 for full joints, 27 for excluding pelvis
             num_epochs=30,
             learning_rate=1e-3,
             train_split=0.8
@@ -588,14 +596,14 @@ if __name__ == "__main__":
         print("Starting testing...")
         model_path = os.path.join(output_path, "BiomechPriorVAE_best.pth")
         scaler_path = os.path.join(output_path, "scaler.pkl")
-        model, trainer, scaler, label_encoder = test_model(
+        model, trainer, scaler = test_model(
             data_root_path=data_root_path,
             geometry_path=geometry_path,
             model_path=model_path,
             scaler_path=scaler_path,
             latent_dim=20,
             batch_size=256,
-            num_dofs=33,
+            num_dofs=27,
             train_split=0.8,
         )
 
@@ -612,7 +620,7 @@ if __name__ == "__main__":
             analysis_path=analysis_path,
             latent_dim=20,
             batch_size=256,
-            num_dofs=33,
+            num_dofs=27,
             train_split=0.8,
         )
 

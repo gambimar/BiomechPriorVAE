@@ -2,20 +2,35 @@ import nimblephysics as nimble
 import numpy as np
 import time
 from scipy.io import loadmat
+from scipy.spatial.transform import Rotation
 import os
 import threading
 
 class PoseVisualizer:
-    def __init__(self):
+    def __init__(self, repo_path):
         self.skeleton = None
         self.gui = None
+        self.repo_path = repo_path
 
         self._dof_mapping_setting()
-        self._load_skeleton()
+        self._load_skeleton(repo_path)
+
+    def _load_skeleton(self, repo_path):
+        maro_model_path = os.path.join(repo_path, "data", "model", "gait3d_pelvis213_Innsbruck_scaled_s01_baseline.osim")
+        custom_opensim: nimble.biomechanics.OpenSimFile = nimble.biomechanics.OpenSimParser.parseOsim(maro_model_path)
+        self.skeleton: nimble.dynamics.Skeleton = custom_opensim.skeleton
+
+        print("Skeleton Loaded!")
+        # print(f"Number of DOFs: {self.skeleton.getNumDofs()}")
+        # print(f"Number of joints: {self.skeleton.getNumJoints()}")
+        # print("\nJoint DOF names:")
+        # dof_names = [self.skeleton.getDofByIndex(i).getName() for i in range(self.skeleton.getNumDofs())]
+        # for i, name in enumerate(dof_names):
+        #     print(f"  {i}: {name}")
 
     def _dof_mapping_setting(self):
-        self.nimble_dof_names = [
-            'pelvis_tilt', 'pelvis_list', 'pelvis_rotation', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz',
+        self.osim_dof_names = [
+            'pelvis_rotation', 'pelvis_list', 'pelvis_tilt', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz',
             'hip_flexion_r', 'hip_adduction_r', 'hip_rotation_r', 'knee_angle_r', 'ankle_angle_r', 
             'subtalar_angle_r', 'mtp_angle_r', 'hip_flexion_l', 'hip_adduction_l', 'hip_rotation_l', 
             'knee_angle_l', 'ankle_angle_l', 'subtalar_angle_l', 'mtp_angle_l', 'lumbar_extension', 
@@ -23,7 +38,7 @@ class PoseVisualizer:
             'pro_sup_r', 'wrist_flex_r', 'wrist_dev_r', 'arm_flex_l', 'arm_add_l', 'arm_rot_l', 
             'elbow_flex_l', 'pro_sup_l', 'wrist_flex_l', 'wrist_dev_l'
         ]
-        self.gait3d_dof_names = [
+        self.mat_dof_names = [
             'pelvis_rotation', 'pelvis_list', 'pelvis_tilt', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz',
             'hip_flexion_r', 'hip_adduction_r', 'hip_rotation_r', 'knee_angle_r', 'ankle_angle_r', 
             'subtalar_angle_r', 'mtp_angle_r', 'hip_flexion_l', 'hip_adduction_l', 'hip_rotation_l', 
@@ -33,19 +48,12 @@ class PoseVisualizer:
         ]
 
         self.dof_mapping = []
-        for nimble_dof in self.nimble_dof_names:
-            if nimble_dof in self.gait3d_dof_names:
-                gait3d_idx = self.gait3d_dof_names.index(nimble_dof)
-                self.dof_mapping.append(gait3d_idx)
+        for osim_dof in self.osim_dof_names:
+            if osim_dof in self.mat_dof_names:
+                mat_dof_idx = self.mat_dof_names.index(osim_dof)
+                self.dof_mapping.append(mat_dof_idx)
             else:
                 self.dof_mapping.append(-1)
-
-
-    def _load_skeleton(self):
-        rajagopal_opensim = nimble.RajagopalHumanBodyModel()
-        self.skeleton = rajagopal_opensim.skeleton
-
-        print("Skeleton Loaded!")
 
     #Autofill the missing dof of 33dof model into 37dof
     def dof_autofill(self, joint_position_33):
@@ -67,7 +75,6 @@ class PoseVisualizer:
             joint_position = self.dof_autofill(joint_position)
         elif len(joint_position) != 37:
             raise ValueError(f"Expected 33/37 dof, got {len(joint_position)}")
-        
         self.skeleton.setPositions(joint_position)
 
     def visualize_pose(self, joint_position, port=8080):
@@ -80,7 +87,7 @@ class PoseVisualizer:
         try:
             while True:
                 self.gui.nativeAPI().renderSkeleton(self.skeleton)
-                time.sleep
+                time.sleep(0.01)
         except KeyboardInterrupt:
             print("Visualization stopped")
 
@@ -118,55 +125,48 @@ class PoseVisualizer:
         except KeyboardInterrupt:
             print("Animation stopped")
 
-def mat_visualize(mat_path):
+def convert_euler_yxz_to_xyz(angles_yxz):
+    n_frames = angles_yxz.shape[1]
+    angles_xyz = np.zeros_like(angles_yxz)
+    
+    for i in range(n_frames):
+        rot_y = angles_yxz[0, i]  # pelvis_rotation
+        rot_x = angles_yxz[1, i]  # pelvis_obliquity  
+        rot_z = angles_yxz[2, i]  # pelvis_tilt
+        
+        r = Rotation.from_euler('YXZ', [rot_y, rot_x, rot_z], degrees=False)
+        xyz_angles = r.as_euler('XYZ', degrees=False)
+        angles_xyz[:, i] = xyz_angles
+    
+    return angles_xyz
+
+def mat_visualize(mat_path, repo_path):
     for filename in os.listdir(mat_path):
         if filename.endswith(".mat"):
-            if filename.startswith('standingJoints'):
-                standing_path = os.path.join(mat_path, filename)
-            elif filename.startswith('runningJoints'):
+            if filename.startswith('runningJoints'):
                 running_path = os.path.join(mat_path, filename)
-            elif filename.startswith('curvedRunningJoints'):
-                curvedrunning_path = os.path.join(mat_path, filename)
-
-    standing_mat = loadmat(standing_path)
-    standingJoints = standing_mat['standingJoints'] #(33, 1)
-    # row10: knee_angle_r, row17: knee_angle_l
-    standingJoints_fix = standingJoints.copy()
-    standingJoints_fix[[9, 16], :] = -standingJoints_fix[[9, 16], :]
-
-    # curvedrunning_mat = loadmat(curvedrunning_path)
-    # curvedRunningJoints = curvedrunning_mat['curvedRunningJoints'] #(33, 50)
-    # curvedRunningJoints_fix = curvedRunningJoints.copy()
-    # curvedRunningJoints_fix[[9, 16], :] = -curvedRunningJoints_fix[[9, 16], :]
 
     running_mat = loadmat(running_path)
     runningJoints = running_mat['runningJoints'] #(33, 50)
     runningJoints_fix = runningJoints.copy()
-    runningJoints_fix[[9, 16], :] = -runningJoints_fix[[9, 16], :]
+
+    pelvis_yxz = runningJoints[:3, :]  # [rotation_y, obliquity_x, tilt_z]
+    pelvis_xyz = convert_euler_yxz_to_xyz(pelvis_yxz)
+
+    runningJoints_fix[0, :] = pelvis_xyz[1, :]  # pelvis_rotation ← Y axis
+    runningJoints_fix[1, :] = pelvis_xyz[0, :]  # pelvis_obliquity ← X axis
+    runningJoints_fix[2, :] = pelvis_xyz[2, :]  # pelvis_tilt ← Z axis
 
 
-    visualizer = PoseVisualizer()
-    visualizer.visualize_pose(joint_position=standingJoints_fix, port=8080)
+    visualizer = PoseVisualizer(repo_path=repo_path)
     visualizer.animate_poses(joint_positions=runningJoints_fix, port=8081)
-    # visualizer.animate_poses(joint_positions=curvedRunningJoints_fix, port=8082)
     
 
 if __name__ == "__main__":
-    # #Test visualization
-    # test_pose_33 = np.random.uniform(-0.5, 0.5, 33)
-    # visualizer = PoseVisualizer()
-    # visualizer.visualize_pose(joint_position=test_pose_33)
-
     #Mat visualization
     mat_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'result', 'mat')
-    mat_visualize(mat_path)
-
-    # #Latent space interpolation inspection
-    # data_path = '../result/model/latent_analysis/'
-    # interp_data_path = os.path.join(data_path, 'interpolated_poses.npy')
-    # interp_data = np.load(interp_data_path)
-    # visualizer = PoseVisualizer()
-    # visualizer.inspect_poses(interp_data.T)
+    repo_path = os.path.dirname(os.path.dirname(__file__))
+    mat_visualize(mat_path, repo_path)
 
 
 
