@@ -22,15 +22,15 @@ class PoseVisualizer:
 
         print("Skeleton Loaded!")
         # print(f"Number of DOFs: {self.skeleton.getNumDofs()}")
-        # print(f"Number of joints: {self.skeleton.getNumJoints()}")
         # print("\nJoint DOF names:")
         # dof_names = [self.skeleton.getDofByIndex(i).getName() for i in range(self.skeleton.getNumDofs())]
         # for i, name in enumerate(dof_names):
         #     print(f"  {i}: {name}")
 
     def _dof_mapping_setting(self):
+        #Here because we have converted the pelvis rotation representation from YXZ to ZXY, so the dof names are the same, we do not need to map them again, we only need to fill the missing dof with 0 (use -1 here as a flag)
         self.osim_dof_names = [
-            'pelvis_rotation', 'pelvis_list', 'pelvis_tilt', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz',
+            'pelvis_rotation', 'pelvis_obliquity', 'pelvis_tilt', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz',
             'hip_flexion_r', 'hip_adduction_r', 'hip_rotation_r', 'knee_angle_r', 'ankle_angle_r', 
             'subtalar_angle_r', 'mtp_angle_r', 'hip_flexion_l', 'hip_adduction_l', 'hip_rotation_l', 
             'knee_angle_l', 'ankle_angle_l', 'subtalar_angle_l', 'mtp_angle_l', 'lumbar_extension', 
@@ -39,7 +39,7 @@ class PoseVisualizer:
             'elbow_flex_l', 'pro_sup_l', 'wrist_flex_l', 'wrist_dev_l'
         ]
         self.mat_dof_names = [
-            'pelvis_rotation', 'pelvis_list', 'pelvis_tilt', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz',
+            'pelvis_rotation', 'pelvis_obliquity', 'pelvis_tilt', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz',
             'hip_flexion_r', 'hip_adduction_r', 'hip_rotation_r', 'knee_angle_r', 'ankle_angle_r', 
             'subtalar_angle_r', 'mtp_angle_r', 'hip_flexion_l', 'hip_adduction_l', 'hip_rotation_l', 
             'knee_angle_l', 'ankle_angle_l', 'subtalar_angle_l', 'mtp_angle_l', 'lumbar_extension', 
@@ -54,6 +54,7 @@ class PoseVisualizer:
                 self.dof_mapping.append(mat_dof_idx)
             else:
                 self.dof_mapping.append(-1)
+        # print(f"DOF Mapping: {self.dof_mapping}")
 
     #Autofill the missing dof of 33dof model into 37dof
     def dof_autofill(self, joint_position_33):
@@ -125,9 +126,9 @@ class PoseVisualizer:
         except KeyboardInterrupt:
             print("Animation stopped")
 
-def convert_euler_yxz_to_xyz(angles_yxz):
+def convert_euler_yxz_to_zxy(angles_yxz):
     n_frames = angles_yxz.shape[1]
-    angles_xyz = np.zeros_like(angles_yxz)
+    angles_zxy = np.zeros_like(angles_yxz)
     
     for i in range(n_frames):
         rot_y = angles_yxz[0, i]  # pelvis_rotation
@@ -135,10 +136,10 @@ def convert_euler_yxz_to_xyz(angles_yxz):
         rot_z = angles_yxz[2, i]  # pelvis_tilt
         
         r = Rotation.from_euler('YXZ', [rot_y, rot_x, rot_z], degrees=False)
-        xyz_angles = r.as_euler('XYZ', degrees=False)
-        angles_xyz[:, i] = xyz_angles
+        zxy_angles = r.as_euler('ZXY', degrees=False)
+        angles_zxy[:, i] = zxy_angles
     
-    return angles_xyz
+    return angles_zxy
 
 def mat_visualize(mat_path, repo_path):
     for filename in os.listdir(mat_path):
@@ -151,12 +152,11 @@ def mat_visualize(mat_path, repo_path):
     runningJoints_fix = runningJoints.copy()
 
     pelvis_yxz = runningJoints[:3, :]  # [rotation_y, obliquity_x, tilt_z]
-    pelvis_xyz = convert_euler_yxz_to_xyz(pelvis_yxz)
+    pelvis_zxy = convert_euler_yxz_to_zxy(pelvis_yxz)  # [tilt_z, obliquity_x, rotation_y]
 
-    runningJoints_fix[0, :] = pelvis_xyz[1, :]  # pelvis_rotation ← Y axis
-    runningJoints_fix[1, :] = pelvis_xyz[0, :]  # pelvis_obliquity ← X axis
-    runningJoints_fix[2, :] = pelvis_xyz[2, :]  # pelvis_tilt ← Z axis
-
+    runningJoints_fix[0, :] = pelvis_zxy[0, :]
+    runningJoints_fix[1, :] = pelvis_zxy[1, :]
+    runningJoints_fix[2, :] = pelvis_zxy[2, :]
 
     visualizer = PoseVisualizer(repo_path=repo_path)
     visualizer.animate_poses(joint_positions=runningJoints_fix, port=8081)
