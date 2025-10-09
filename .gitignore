@@ -1,5 +1,9 @@
 # ignore training data file
-data/
+data/Dataset/
+data/Geometry/
+data/model/Geometry/
+data/model/OpenSim/
+
 result/
 
 
