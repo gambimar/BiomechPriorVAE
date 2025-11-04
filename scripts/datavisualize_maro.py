@@ -164,7 +164,7 @@ def mat_visualize(mat_path, repo_path):
 
 if __name__ == "__main__":
     #Mat visualization
-    mat_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'result', 'mat')
+    mat_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'results_sim', 'script3D_1.3')
     repo_path = os.path.dirname(os.path.dirname(__file__))
     mat_visualize(mat_path, repo_path)
 
