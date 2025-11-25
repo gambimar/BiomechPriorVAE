@@ -9,6 +9,8 @@ class InputDataKeys:
     # These are the joint quantities for the joints that we are observing
     POS = 'pos'
     VEL = 'vel'
+    FORCE = 'force'
+    M = 'tau'
 
 class OutputDataKeys:
     trialname = 'trialname'
@@ -237,10 +239,26 @@ class AddBiomechanicsDataset(Dataset):
             input_dict[InputDataKeys.POS] = torch.row_stack([
                 torch.tensor(p.pos, dtype=self.dtype).detach()[self.target_dof_indices] for p in first_passes
             ])
+            input_dict[InputDataKeys.POS][:,[5,6,12,13]] = 0.0  # Zero out mtp and subtalar angles
             input_dict[InputDataKeys.VEL] = torch.row_stack([
                 torch.tensor(p.vel, dtype=self.dtype).detach()[self.target_dof_indices] for p in first_passes
             ])
-            
+            input_dict[InputDataKeys.VEL][:,[5,6,12,13]] = 0.0  # Zero out mtp and subtalar angles
+            force = torch.row_stack([
+                torch.tensor(p.groundContactForce, dtype=self.dtype).detach() for p in first_passes
+            ])
+            f = force / subject.getMassKg() / 9.81 # Normalize by body weight
+            f = torch.tensor([[f[:,1], torch.sqrt(f[:,0]**2 + f[:,2]**2), f[:,4], torch.sqrt(f[:,3]**2 + f[:,5]**2)]], dtype=self.dtype)
+            input_dict[InputDataKeys.FORCE] = f
+
+            input_dict[InputDataKeys.M] = torch.row_stack([
+                torch.tensor(p.tau, dtype=self.dtype).detach()[self.target_dof_indices] for p in first_passes
+            ]) / subject.getMassKg() / 9.81 / subject.getHeightM()  # Normalize by body weight and height
+            input_dict[InputDataKeys.M][:,range(6)] = 0.0  # Zero out pelvis torques
+            input_dict["M_ankle"] = torch.row_stack([
+                torch.tensor(p.tau, dtype=self.dtype).detach()[[10,17]] for p in first_passes
+            ]) / subject.getMassKg() / 9.81 / subject.getHeightM()  # Normalize by body weight and height
+
         if get_label:
             trialname = subject.getTrialName(trial)
             if trialname.lower().find('walk') != -1:

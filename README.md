@@ -18,3 +18,15 @@ Contains the VAE model trained using PyTorch and saved StandardScaler.
 
 ## Notes
 The dataset used in the project comes from AddBiomechanics dataset, which uses the default **'Rajagopal' model (37 DOFs)**, but for the optimal control, the model we used is **'gait3d_pelvis213' (33 DOFs)**, there are four wrist dofs are missing, thus the input dimension of VAE model is 33 instead of 37, and four wrist DOFs would be automatically filled by 0.0 when visualization is needed. **So please note whether the DOFs of musculoskeletal model match the VAE model**.
+
+
+### 3. Things to try
+VAE state spaces:
+- q
+- qdot
+- Fy
+- ||Fx,Fz||/Fy
+
+or any of their combinations.
+
+For mixed tasks, scaling between the categories may be helpful

@@ -13,11 +13,45 @@ class VAEModelWrapper:
     def __init__(self, model_path, scaler_path, num_dofs=27, latent_dim=20, hidden_dim=512, device='cpu'):
         self.device = device
         self.num_dofs = num_dofs
-        self.mask = torch.zeros(102, dtype=torch.bool, device=device)
+        self.mask = torch.zeros(91, dtype=torch.bool, device=device)
         if num_dofs == 27:
             self.mask[:27] = True
-        elif num_dofs == 54:
+            self.result_scale = torch.ones(27, dtype=torch.float32, device=device)
+        elif num_dofs == 54: #Here q and M
+            self.mask[:27] = True
+            self.mask[-27:] = True
+            self.result_scale = torch.ones(54, dtype=torch.float32, device=device)
+            self.result_scale[-27:] = 10 # scaling for torque dimensions
+        elif num_dofs == 31:
+            self.mask[:27] = True
+            self.mask[54:58] = True
+            self.result_scale = torch.ones(31, dtype=torch.float32, device=device)
+            self.result_scale[-4:] = 27/4 # Scale force dimensions so that they weigh equally
+        elif num_dofs == 58:
             self.mask[:54] = True
+            self.mask[54:58] = True
+            self.result_scale = torch.ones(58, dtype=torch.float32, device=device)
+            self.result_scale[-4:] = 27/4 # Scale force dimensions so that they weigh equally
+        elif num_dofs == 56: # Q, Qdot and M_ankle
+            self.mask[:27] = True
+            self.mask[27:54] = True
+            self.mask[58+10] = True # right ankle
+            self.mask[58+17] = True # left ankle
+            self.result_scale = torch.ones(56, dtype=torch.float32, device=device)
+            self.result_scale[-2:] = 27/2 # Scale force dimensions so that they weigh equally
+        elif num_dofs == 29: # Q and M_ankle
+            self.mask[:27] = True
+            self.mask[58+10] = True # right ankle
+            self.mask[58+17] = True # left ankle
+            self.result_scale = torch.ones(29, dtype=torch.float32, device=device)  
+            self.result_scale[-2:] = 27/2 # Scale force dimensions so that they weigh equally
+        elif num_dofs == 81: # Q, Qdot and M
+            self.mask[:27] = True
+            self.mask[27:54] = True
+            self.mask[-27:] = True
+            self.result_scale = torch.ones(81, dtype=torch.float32, device=device)
+            self.result_scale[-27:] = 1 # scaling for torque dimensions
+            self.result_scale[27:54] = 1 # scaling for velocity dimensions
         else:
             raise ValueError(f"Unsupported num_dofs: {num_dofs}, only 27 or 54 are supported.")
 
@@ -117,13 +151,24 @@ class VAEModelWrapper:
             subset_joints = joint_angles.unsqueeze(0)  # Add batch dimension
         else:
             subset_joints = joint_angles
+        
+        # Accumulate the forces - 8 dim for each Fx, Fy, Fz for each foot
+        Fxr, Fyr, Fzr, Fxl, Fyl, Fzl = subset_joints[:, 54:102].split(8, dim=1)
+        F_vec = torch.concatenate([
+            Fyr.sum(dim=1,keepdim=True),
+            torch.sqrt(Fxr.sum(dim=1,keepdim=True)**2 + Fzr.sum(dim=1,keepdim=True)**2),
+            Fyl.sum(dim=1,keepdim=True),
+            torch.sqrt(Fxl.sum(dim=1,keepdim=True)**2 + Fzl.sum(dim=1,keepdim=True)**2)
+        ],dim=1)
+        subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 102:]], dim=1)
         # Set mtp and subtalar to zero for foot joints
         scaling = torch.ones_like(subset_joints)
         scaling[:,[5,6,12,13]] = 0.0
         scaling[:,[3,10]] = -1 # Knee inverted
-        if len(joint_angles) > 50:
-            scaling[:,[5+27,6+27,12+27,13+27]] = 0.0
-            scaling[:,[3+27,10+27]] = -1
+        scaling[:,[5+27,6+27,12+27,13+27]] = 0.0
+        scaling[:,[3+27,10+27]] = -1
+        scaling[:, [-33+6+3, -33+6+10]] = -1 # knee moment inverted
+        scaling[:, [-27+13, -27+6]] = 0.0 # mtp moment zeroed
 
         subset_joints = subset_joints * scaling
         subset_joints = subset_joints[:,self.mask]
@@ -131,11 +176,12 @@ class VAEModelWrapper:
 
         x = processed_angles
         mu, logvar = self.model.encode(x)
+        #z = self.model.reparameterize(mu, logvar)
         mu = self.model.decode(mu)
         rec_x_np = mu.squeeze(0)
         recon_subset = self._postprocess_torch(rec_x_np)
         # output = self._reconstruct_full_joints(recon_subset, original_pelvis)
-        error = torch.norm(subset_joints - recon_subset)**2
+        error = torch.mean(((subset_joints - recon_subset)*self.result_scale)**2)
         if not getgrad:
             return error.detach().cpu().numpy()
         else: 
@@ -144,7 +190,7 @@ class VAEModelWrapper:
 
     #Reconstruct the joint angle (with gradient w.r.t original scale), return the gradient
     def reconstruct_withgrad(self, joint_angles):
-        return self.reconstruct(joint_angles, getgrad=True).flatten()
+        return self.reconstruct(joint_angles, getgrad=True)
 
 
 #Initialize a instance to get the result

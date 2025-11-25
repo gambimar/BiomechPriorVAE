@@ -17,7 +17,6 @@ from src.datavisualize import PoseVisualizer
 from src.data.addBiomechanicsDataset import AddBiomechanicsDataset, target_dof_names
 
 addbiomechanics_path = "/home/public/data/AddBiomechanicsDataset/train/With_Arm/"
-state_keys = ["pos", "vel"]
 
 def set_seed(seed=42):
     """Set random seed for reproducibility"""
@@ -57,12 +56,11 @@ def load_data(data_root_path, geometry_path, batch_size=64, train_split=0.8):
             mean[key] += np.mean(batch_data, axis=0)
             std[key] += np.var(batch_data, axis=0)
         n_batches += 1
-        if n_batches % 1000 == 0:
-            pass
+
             
 
-    mean = np.array([mean[key] for key in state_keys]).flatten()
-    std = np.array([std[key] for key in state_keys]).flatten()
+    mean = np.array(np.hstack([mean[key] for key in state_keys])).flatten()
+    std = np.array(np.hstack([std[key] for key in state_keys])).flatten()
     mean /= n_batches
     std = np.sqrt(std / n_batches)
     # Check for null in std
@@ -72,6 +70,10 @@ def load_data(data_root_path, geometry_path, batch_size=64, train_split=0.8):
         print(f"{key}: mean={mean[i]:.4f}, std={std[i]:.4f}")
         if 'vel' in state_keys:
             print(f"{key}_vel: mean={mean[i+27]:.4f}, std={std[i+27]:.4f}")
+    if "force" in state_keys:
+        for i, key in enumerate(['Fy_r', 'Flat_r', 'Fy_l', 'Flat_l']):
+            print(f"{key}: mean={mean[-4+i]:.4f}, std={std[-4+i]:.4f}")
+            
 
     return train_loader, val_loader, {'mean_': torch.tensor(mean, dtype=torch.float32, device='cuda' if torch.cuda.is_available() else 'cpu'),
                                        'scale_': torch.tensor(std, dtype=torch.float32, device='cuda' if torch.cuda.is_available() else 'cpu')}
@@ -617,29 +619,41 @@ if __name__ == "__main__":
     analysis_path = os.path.join(script_dir, "../result/")
 
     mode = "train" #"train" / "test" / "analyze"
-    model = "q_qdot"    #"q", "q_qdot", "F", "q_dot_F"
+    model = "q"    #"q", "q_qdot", "F", "q_dot_F"
     
     num_dofs_dict = {
         "q": 27,
         "q_qdot": 27*2,
+        "q_qdot_M_ankle": 27*2+2,
         "F": 27+4,
         "q_dot_F": 27*2+4,
+        "q_M_ankle": 27+2,
+        "q_M": 27+27,
+        "q_qdot_M": 27*2+27,
     }
 
     latent_size = {
-        "q": 16,
-        "q_qdot": 32,
-        "F": 16,
-        "q_dot_F": 32,
+        "q": 24,
+        "q_qdot": 24,
+        "q_qdot_M_ankle": 24,
+        "F": 24,
+        "q_dot_F": 24,
+        "q_M_ankle": 24,
+        "q_M": 24,
+        "q_qdot_M": 24,
     }
     state_keys_ = {
         "q": ["pos"],
         "q_qdot": ["pos", "vel"],
+        "q_qdot_M_ankle": ["pos", "vel", "M_ankle"],
         "F": ["pos", "force"],
         "q_dot_F": ["pos", "vel", "force"],
+        "q_M_ankle": ["pos", "M_ankle"],
+        "q_M": ["pos", "tau"],
+        "q_qdot_M": ["pos", "vel", "tau"],
     }
-    state_keys = state_keys_[model]
 
+    state_keys = state_keys_[model]
     num_dofs = num_dofs_dict[model]
     if mode == "train":
         print("Starting training...")
@@ -647,12 +661,12 @@ if __name__ == "__main__":
             data_root_path=data_root_path,
             geometry_path=geometry_path,
             output_path=output_path,
-            latent_dim=latent_size[model],
+            latent_dim=24,
             batch_size=256,
             num_dofs=num_dofs,
             num_epochs=100,
             learning_rate=1e-3,
-            train_split=0.8
+            train_split=0.8,
         )
         
     elif mode == "test":
