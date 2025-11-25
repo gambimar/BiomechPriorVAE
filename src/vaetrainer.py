@@ -1,3 +1,4 @@
+from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,65 +6,77 @@ import torch.utils
 from torch.utils.data import DataLoader, TensorDataset, random_split
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
 import os
 import time
 from tqdm import tqdm
 import pickle
+import random
 
-from b3dconverter import Gait3dB3DConverter
-from datavisualize import PoseVisualizer
+from src.datavisualize import PoseVisualizer
+from src.data.addBiomechanicsDataset import AddBiomechanicsDataset, target_dof_names
+
+addbiomechanics_path = "/home/public/data/AddBiomechanicsDataset/train/With_Arm/"
+
+def set_seed(seed=42):
+    """Set random seed for reproducibility"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if using multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 def load_data(data_root_path, geometry_path, batch_size=64, train_split=0.8):
-    all_datafile_path = []
-    all_labels = []
-    file_idx = 0
-    for root, dirs, files in os.walk(data_root_path):
-        for file in files:
-            if file.endswith('.b3d'):
-                datafile_path = os.path.join(root, file)
-                rel_path = os.path.relpath(datafile_path, data_root_path)
-                top_folder = rel_path.split(os.sep)[0]
-                all_datafile_path.append(datafile_path)
-                all_labels.append(top_folder)
-                file_idx += 1
+    dataset = AddBiomechanicsDataset(
+        addbiomechanics_path,
+        geometry_folder='',
+        window_size=1,
+        device='gpu' if torch.cuda.is_available() else 'cpu',
+        testing_with_short_dataset=False
+    )
 
-    print(f"Loaded {file_idx} data, ready for converting...")
 
     #Initialize data converter
-    converter = Gait3dB3DConverter(geometry_path)
-
-    all_data = []
-    expanded_label = []
-    for datafile, label in zip(all_datafile_path, all_labels):
-        subject = converter.load_subject(datafile, processing_pass=0)
-        joint_pos = converter.convert_data(subject, processing_pass=0)
-        all_data.append(joint_pos)
-        expanded_label.extend([label] * len(joint_pos))
-    combined_data = np.vstack(all_data)
-    labels = np.array(expanded_label)
-    print(f"Data converting complete! Data shape: {combined_data.shape}, Labels shape: {labels.shape}")
-
-    if combined_data.shape[1] == 33:
-        combined_data = combined_data[:, 6:]
-        print(f"Extracted joint subset: {combined_data.shape[1]} dimensions (excluding pelvis)")
-    
-    label_encoder = LabelEncoder()
-    encoded_labels = label_encoder.fit_transform(labels)
-
-    scaler = StandardScaler()
-    normalized_data = scaler.fit_transform(combined_data)
-    
-    dataset = TensorDataset(torch.FloatTensor(normalized_data), torch.LongTensor(encoded_labels))
-
     train_size = int(train_split * len(dataset))
     val_size = int(len(dataset) - train_size)
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    # Use generator for reproducible split
+    generator = torch.Generator().manual_seed(42)
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size], generator=generator)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=12)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=12)
 
-    return train_loader, val_loader, scaler, label_encoder
+    mean, std, n_batches = [{key: 0 for key in state_keys} for _ in range(2)] + [0]
+    print('Getting scaler')
+    for (data, _, _, _) in tqdm(train_loader):
+        for key in state_keys:
+            batch_data = data[key].numpy()
+            mean[key] += np.mean(batch_data, axis=0)
+            std[key] += np.var(batch_data, axis=0)
+        n_batches += 1
+
+            
+
+    mean = np.array(np.hstack([mean[key] for key in state_keys])).flatten()
+    std = np.array(np.hstack([std[key] for key in state_keys])).flatten()
+    mean /= n_batches
+    std = np.sqrt(std / n_batches)
+    # Check for null in std
+    std[std == 0] = 1
+    # print bounds
+    for i, key in enumerate(target_dof_names):
+        print(f"{key}: mean={mean[i]:.4f}, std={std[i]:.4f}")
+        if 'vel' in state_keys:
+            print(f"{key}_vel: mean={mean[i+27]:.4f}, std={std[i+27]:.4f}")
+    if "force" in state_keys:
+        for i, key in enumerate(['Fy_r', 'Flat_r', 'Fy_l', 'Flat_l']):
+            print(f"{key}: mean={mean[-4+i]:.4f}, std={std[-4+i]:.4f}")
+            
+
+    return train_loader, val_loader, {'mean_': torch.tensor(mean, dtype=torch.float32, device='cuda' if torch.cuda.is_available() else 'cpu'),
+                                       'scale_': torch.tensor(std, dtype=torch.float32, device='cuda' if torch.cuda.is_available() else 'cpu')}
 
 
 #VAE network configuration    
@@ -77,11 +90,11 @@ class BiomechPriorVAE(nn.Module):
         self.encoder = nn.Sequential(
             nn.LayerNorm(num_dofs),
             nn.Linear(num_dofs, hidden_dim),
-            nn.LeakyReLU(),
-            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(),
+            nn.GELU(),
+            nn.RMSNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim)
         )
 
@@ -90,10 +103,11 @@ class BiomechPriorVAE(nn.Module):
 
         self.decoder = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
-            nn.LeakyReLU(),
+            nn.GELU(),
+            nn.RMSNorm(hidden_dim),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.Linear(hidden_dim, num_dofs)
         )
 
@@ -124,8 +138,14 @@ class BiomechPriorVAE(nn.Module):
     
 
 def vae_loss(x, recon_x, mu, logvar, beta):
-    recon_loss = F.mse_loss(recon_x, x, reduction='sum')
-    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    batch_size = x.size(0)
+    
+    # Reconstruction loss: sum over features, mean over batch
+    recon_loss = F.mse_loss(recon_x, x, reduction='sum') / batch_size
+    
+    # KL divergence loss: sum over latent dims, mean over batch
+    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
+    
     total_loss = recon_loss + beta * kl_loss
 
     return total_loss, recon_loss, kl_loss
@@ -142,27 +162,35 @@ class BiomechPriorVAETrainer:
     def train_epoch(self,
                     train_loader,
                     optimizer: torch.optim.Optimizer,
-                    beta=1.0):
+                    beta=1.0,
+                    scaler=None):
         self.model.train()
         epoch_loss = 0
         epoch_recon_loss = 0
         epoch_kl_loss = 0
 
-        for batch_idx, (data, _) in enumerate(tqdm(train_loader, desc="Training")):
+        for batch_idx, (data, _, _, _) in enumerate(tqdm(train_loader, desc="Training")):
+            data = torch.concat([data[key] for key in state_keys], dim=-1)
             data = data.to(self.device)
+            if scaler is not None:
+                data = (data - scaler['mean_']) / scaler['scale_']
             optimizer.zero_grad()
 
             recon_data, mu, logvar = self.model(data)
             loss, recon_loss, kl_loss = vae_loss(x=data, recon_x=recon_data, mu=mu, logvar=logvar, beta=beta)
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # ✅ Add gradient clipping
             optimizer.step()
 
             epoch_loss += loss.item()
             epoch_recon_loss += recon_loss.item()
             epoch_kl_loss += kl_loss.item()
 
-        num_batches = len(train_loader)
+            if batch_idx == 1000:
+                continue
+
+        num_batches = batch_idx + 1
 
         return {
             'loss': epoch_loss / num_batches,
@@ -170,7 +198,7 @@ class BiomechPriorVAETrainer:
             'kl_loss': epoch_kl_loss / num_batches
         }
         
-    def train(self, train_loader, val_loader, num_epochs=100, learning_rate=1e-3, beta=1.0, save_path=None):
+    def train(self, train_loader, val_loader, num_epochs=100, learning_rate=1e-3, beta=1.0, save_path=None, scaler=None):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=10)
 
@@ -178,11 +206,11 @@ class BiomechPriorVAETrainer:
 
         for epoch in range(num_epochs):
             #Train
-            train_metrics = self.train_epoch(train_loader=train_loader, optimizer=optimizer, beta=beta)
+            train_metrics = self.train_epoch(train_loader=train_loader, optimizer=optimizer, beta=beta, scaler=scaler)
 
             #Validate
             if val_loader is not None:
-                val_metrics = self.validate(val_loader=val_loader, beta=beta)
+                val_metrics = self.validate(val_loader=val_loader, beta=beta, scaler=scaler)
                 scheduler.step(val_metrics['loss'])
 
                 print(f"Epoch {epoch+1}/{num_epochs}:")
@@ -203,15 +231,18 @@ class BiomechPriorVAETrainer:
             self.training_history['recon_loss'].append(train_metrics['recon_loss'])
             self.training_history['kl_loss'].append(train_metrics['kl_loss'])
 
-    def validate(self, val_loader, beta=1.0):
+    def validate(self, val_loader, beta=1.0, scaler=None):
         self.model.eval()
         val_loss = 0
         val_recon_loss = 0
         val_kl_loss = 0
 
         with torch.no_grad():
-            for (data, _) in val_loader:
+            for i, (data, _, _, _) in enumerate(val_loader):
+                data = torch.concat([data[key] for key in state_keys], dim=-1)
                 data = data.to(self.device)
+                if scaler is not None:
+                    data = (data - scaler['mean_']) / scaler['scale_']
 
                 recon_data, mu, logvar = self.model(data)
                 loss, recon_loss, kl_loss = vae_loss(x=data, recon_x=recon_data, mu=mu, logvar=logvar, beta=beta)
@@ -220,7 +251,10 @@ class BiomechPriorVAETrainer:
                 val_recon_loss += recon_loss.item()
                 val_kl_loss += kl_loss.item()
 
-            num_batches = len(val_loader)
+                if i == 500:
+                    continue
+
+            num_batches = i + 1
 
             return{
                 'loss': val_loss / num_batches,
@@ -233,19 +267,20 @@ class BiomechPriorVAETrainer:
         result = []
 
         with torch.no_grad():
-            for i, (data, _) in enumerate(val_loader):
+            for i, (data, _, _, _) in enumerate(val_loader):
+                data = torch.concat([data[key] for key in state_keys], dim=-1)
                 data = data.to(self.device)
+                if scaler is not None:
+                    data = (data - scaler['mean_']) / scaler['scale_']
                 recon_data, mu, logvar = self.model(data)
                 
                 ori_data = data.cpu().numpy()
                 rec_data = recon_data.cpu().numpy()
 
-                ori_denorm = scaler.inverse_transform(ori_data)
-                rec_denorm = scaler.inverse_transform(rec_data)
 
                 result.append({
-                    'original': ori_denorm,
-                    'recon': rec_denorm
+                    'original': ori_data,
+                    'recon': rec_data
                 })
         
         return result
@@ -269,7 +304,7 @@ class BiomechPriorVAETrainer:
         axes[2].set_ylabel('Loss')
         
         plt.tight_layout()
-        plt.show()
+        #plt.show()
 
 
 class BioPrioVAEVisualizer:
@@ -289,14 +324,17 @@ class LatentSpaceAnalyzer:
         self.device = device
         
     # Get the latent representation of the dataset
-    def extract_latent_rep(self, data_loader, use_mean=True):
+    def extract_latent_rep(self, data_loader, use_mean=True, scaler=None):
         self.model.eval()
         latent_rep = []
         original_data = []
         labels = []
         
         with torch.no_grad():
-            for (data, batch_labels) in tqdm(data_loader, desc="Extracting latent representations"):
+            for (data, batch_labels, _, _) in tqdm(data_loader, desc="Extracting latent representations"):
+                if scaler is not None:
+                    data = data * scaler['scale_'] + scaler['mean_']
+                data = torch.concat([data[key] for key in state_keys], dim=-1)
                 data = data.to(self.device)
                 mu, logvar = self.model.encode(data)
                 
@@ -307,11 +345,10 @@ class LatentSpaceAnalyzer:
                 
                 latent_rep.append(z.cpu().numpy())
                 original_data.append(data.cpu().numpy())
-                labels.append(batch_labels.cpu().numpy())
+                labels.append(batch_labels)
         
         latent_rep = np.vstack(latent_rep)
         original_data = np.vstack(original_data)
-        labels = np.concatenate(labels)
         
         return latent_rep, original_data, labels
     
@@ -396,13 +433,14 @@ def train_model(
         num_epochs=100,
         learning_rate=1e-3,
         beta=1.0,
-        train_split=0.8
+        train_split=0.8,
+        scaler=None
 ):
     os.makedirs(output_path, exist_ok=True)
-    save_path = os.path.join(output_path, "BiomechPriorVAE_best.pth")
-    scaler_path = os.path.join(output_path, "scaler.pkl")
+    save_path = os.path.join(output_path, f"BiomechPriorVAE_best_{num_dofs}.pth")
+    scaler_path = os.path.join(output_path, f"scaler_{num_dofs}.pkl")
 
-    train_loader, val_loader, scaler, label_encoder = load_data(
+    train_loader, val_loader, scaler = load_data(
         data_root_path=data_root_path,
         geometry_path=geometry_path,
         batch_size=batch_size,
@@ -421,7 +459,8 @@ def train_model(
         num_epochs=num_epochs,
         learning_rate=learning_rate,
         beta=beta,
-        save_path=save_path
+        save_path=save_path,
+        scaler=scaler
     )
     trainer.visualize_history()
 
@@ -430,12 +469,12 @@ def train_model(
     print("Starting visualize test sample...")
     print("="*50)
 
-    visualize_result(
-        model=model,
-        trainer=trainer,
-        val_loader=val_loader,
-        scaler=scaler
-    )
+    #visualize_result(
+    #    model=model,
+    #    trainer=trainer,
+    #    val_loader=val_loader,
+    #    scaler=scaler
+    #)
 
     return model, trainer
 
@@ -454,7 +493,7 @@ def test_model(
     if not os.path.exists(scaler_path):
         raise FileNotFoundError(f"Scaler file not found: {scaler_path}")
     
-    train_loader, val_loader, _, label_encoder = load_data(
+    train_loader, val_loader, scaler = load_data(
         data_root_path=data_root_path,
         geometry_path=geometry_path,
         batch_size=batch_size,
@@ -476,12 +515,12 @@ def test_model(
     print("Starting visualize test sample...")
     print("="*50)
 
-    visualize_result(
-        model=model,
-        trainer=trainer,
-        val_loader=val_loader,
-        scaler=scaler
-    )
+    #visualize_result(
+    #    model=model,
+    #    trainer=trainer,
+    #    val_loader=val_loader,
+    #    scaler=scaler
+    #)
 
     return model, trainer, scaler
 
@@ -536,7 +575,7 @@ def analyze_latent_space(
     
     print("Loading data and model...")
     
-    train_loader, val_loader, _, label_encoder = load_data(
+    train_loader, val_loader, _ = load_data(
         data_root_path=data_root_path, 
         geometry_path=geometry_path, 
         batch_size=batch_size, 
@@ -556,7 +595,7 @@ def analyze_latent_space(
     latent_rep, original_data, labels = analyzer.extract_latent_rep(val_loader, use_mean=True)
     
     print("Visualizing latent space distributions...")
-    analyzer.visualize_latent_space(latent_rep, labels=labels, label_encoder=label_encoder, save_path=analysis_path)
+    analyzer.visualize_latent_space(latent_rep, labels=labels, label_encoder=None, save_path=analysis_path)
     
     print("Generating latent interpolations...")
     interpolated_poses = analyzer.latent_interpolation(
@@ -570,28 +609,66 @@ def analyze_latent_space(
     return latent_rep, interpolated_poses
 
 if __name__ == "__main__":
+    # Set random seed for reproducibility
+    set_seed(42)
+    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     data_root_path = os.path.join(script_dir, "../data/Dataset")
     output_path = os.path.join(script_dir, "../result/model/")
     geometry_path = os.path.join(script_dir, "../data/Geometry/")
     analysis_path = os.path.join(script_dir, "../result/")
 
-    mode = "test" #"train" / "test" / "analyze"
+    mode = "train" #"train" / "test" / "analyze"
+    model = "q"    #"q", "q_qdot", "F", "q_dot_F"
+    
+    num_dofs_dict = {
+        "q": 27,
+        "q_qdot": 27*2,
+        "q_qdot_M_ankle": 27*2+2,
+        "F": 27+4,
+        "q_dot_F": 27*2+4,
+        "q_M_ankle": 27+2,
+        "q_M": 27+27,
+        "q_qdot_M": 27*2+27,
+    }
 
+    latent_size = {
+        "q": 24,
+        "q_qdot": 24,
+        "q_qdot_M_ankle": 24,
+        "F": 24,
+        "q_dot_F": 24,
+        "q_M_ankle": 24,
+        "q_M": 24,
+        "q_qdot_M": 24,
+    }
+    state_keys_ = {
+        "q": ["pos"],
+        "q_qdot": ["pos", "vel"],
+        "q_qdot_M_ankle": ["pos", "vel", "M_ankle"],
+        "F": ["pos", "force"],
+        "q_dot_F": ["pos", "vel", "force"],
+        "q_M_ankle": ["pos", "M_ankle"],
+        "q_M": ["pos", "tau"],
+        "q_qdot_M": ["pos", "vel", "tau"],
+    }
+
+    state_keys = state_keys_[model]
+    num_dofs = num_dofs_dict[model]
     if mode == "train":
         print("Starting training...")
         model, trainer = train_model(
             data_root_path=data_root_path,
             geometry_path=geometry_path,
             output_path=output_path,
-            latent_dim=20,
+            latent_dim=24,
             batch_size=256,
-            num_dofs=27, #33 for full joints, 27 for excluding pelvis
-            num_epochs=30,
+            num_dofs=num_dofs,
+            num_epochs=100,
             learning_rate=1e-3,
-            train_split=0.8
+            train_split=0.8,
         )
-    
+        
     elif mode == "test":
         print("Starting testing...")
         model_path = os.path.join(output_path, "BiomechPriorVAE_best.pth")
@@ -601,9 +678,9 @@ if __name__ == "__main__":
             geometry_path=geometry_path,
             model_path=model_path,
             scaler_path=scaler_path,
-            latent_dim=20,
+            latent_dim=24,
             batch_size=256,
-            num_dofs=27,
+            num_dofs=num_dofs,
             train_split=0.8,
         )
 
@@ -618,11 +695,13 @@ if __name__ == "__main__":
             model_path=model_path,
             scaler_path=scaler_path,
             analysis_path=analysis_path,
-            latent_dim=20,
+            latent_dim=24,
             batch_size=256,
-            num_dofs=27,
+            num_dofs=num_dofs,
             train_split=0.8,
         )
 
     else:
         print("Invalid mode! Please select 'train', 'test' or 'analyze' mode.")
+
+    plt.show()
