@@ -37,16 +37,24 @@ resultFolder   = 'results/IntroductionExamples'; % Relative from the path of the
 %enable flag
 useVAE = true;
 
+% 27: q, 31: q+F, 54: q+qdot, 58: q+qdot+F, 56: q+qdot+M_ankle
+nDimVae = 81;
+if nDimVae > 50
+    latent_size = 24;
+else
+    latent_size = 24;
+end
+
 if useVAE
-    vaeParams.modelPath = which('BiomechPriorVAE_best.pth');
-    vaeParams.scalerPath = which('scaler.pkl');
+    vaeParams.modelPath = which(strcat('BiomechPriorVAE_best_',string(nDimVae),'.pth'));
+    vaeParams.scalerPath = which(strcat('scaler_',string(nDimVae),'.pkl'));
     vaeParams.pythonPath = filePath;
     
-    vaeParams.numDofs = 54; %excluding pelvis
-    vaeParams.latentDim = 24;
+    vaeParams.numDofs = nDimVae; %excluding pelvis
+    vaeParams.latentDim = latent_size;
     vaeParams.hiddenDim = 512;
     vaeParams.device = 'cpu';
-    vaeParams.weight = 0.5;
+    vaeParams.weight = 1e3;
 
     fprintf('VAE objective enabled\n')
 else
@@ -171,14 +179,15 @@ else
     problemRunning = running3D(model,trackingData,initialGuess,resultFileRunning,N,sym,W, targetspeed_x, targetspeed_z, targetdur);
 end
 
-
+%problemRunning.derivativetest
 % Create solver and change solver settings
 solver = IPOPT();
-solver.setOptionField('max_iter', 5000);
-solver.setOptionField('tol', 1e-3); % 0.0005
-solver.setOptionField('dual_inf_tol', 1e-3);
-solver.setOptionField('acceptable_tol', 1e-3); 
-
+solver.setOptionField('max_iter', 4500);
+solver.setOptionField('tol', 5e-4); % 0.0005
+solver.setOptionField('print_level',5);
+%solver.setOptionField('dual_inf_tol', 1e-6);
+%solver.setOptionField('constr_viol_tol',1e-6);
+%solver.setOptionField('acceptable_tol', 1e-6); 
 
 % Solve the optimization problem and save the result. 
 resultRunning = solver.solve(problemRunning);
@@ -196,15 +205,16 @@ for nodeIdx = 1:problemRunning.nNodes
     runningJoints(:, nodeIdx) = resultRunning.X(idxRunningJointsAllNodes(:, nodeIdx));
 end
 
+nDimVaeStr = int2str(nDimVae);
 if useVAE
-    filenameStanding = ['standingJoints_VAE_' current_t_str '.mat'];
-    filenameRunning = ['runningJoints_VAE_' current_t_str '.mat'];
-    filenameCurvedRunning = ['curvedRunningJoints_VAE_' current_t_str '.mat'];
-    filenameResult = ['running_VAE_q_qdot_' current_t_str '.mat'];
+    filenameStanding = ['standingJoints_VAE_' current_t_str '_' nDimVaeStr '.mat'];
+    filenameRunning = ['runningJoints_VAE_' current_t_str '_' nDimVaeStr '.mat'];
+    filenameCurvedRunning = ['curvedRunningJoints_VAE_' current_t_str '_' nDimVaeStr '.mat'];
+    filenameResult = ['running_VAE_q_qdot_' current_t_str '_' nDimVaeStr '.mat'];
 else
     filenameStanding = ['standingJoints_' current_t_str '.mat'];
     filenameRunning = ['runningJoints_' current_t_str '.mat'];
-    filenameCurvedRunning = ['curvedRunningJoints_' current_t_str '.mat'];
+    filenameCurvedRunning = ['curvedRunningJoints_' current_t_str '.msat'];
     filenameResult = ['running.mat'];
 end
 
