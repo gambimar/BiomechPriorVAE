@@ -1,0 +1,119 @@
+%% Run batches of simulations
+base_result_path = "/home/rzlin/ri94mihu/phd/BiomechPriorVAE/result/simulations/";
+
+%% Original simulations
+for speed = 0.73:0.2:5.63
+    break
+    n_conv = 0;
+    iter = 1;
+    while n_conv < 10
+        name = strcat(base_result_path,"generic",string(iter),"_",string(speed),".mat");
+        if ~exist(name,'file')
+            runSim(speed,name);
+        end
+        result = load(name).result;
+        n_conv = n_conv + result.converged;
+
+        iter = iter + 1;
+    end
+end
+for speed = 0.73:0.1:3.53
+    break
+    n_conv = 0;
+    iter = 1;
+    while n_conv < 10
+        name = strcat(base_result_path,"generic",string(iter),"_",string(speed),".mat");
+        if ~exist(name,'file')
+            runSim(speed,name);
+        end
+        result = load(name).result;
+        n_conv = n_conv + result.converged;
+        iter = iter + 1;
+    end
+end
+
+%% Original simulations -- SIPP parametrisation
+
+for speed = 0.73:0.2:5.63
+    break
+    n_conv = 0;
+    iter = 1;
+    while n_conv < 10
+        name = strcat(base_result_path,"sipp",string(iter),"_",string(speed),".mat");
+        if ~exist(name,'file')
+            runSim(speed,name,'sipp_generic_runmad.osim');
+        end
+        result = load(name).result;
+        n_conv = n_conv + result.converged;
+
+        iter = iter + 1;
+    end
+end
+for speed = 0.73:0.1:3.53
+    break
+    n_conv = 0;
+    iter = 1;
+    while n_conv < 10
+        name = strcat(base_result_path,"sipp",string(iter),"_",string(speed),".mat");
+        if ~exist(name,'file')
+            runSim(speed,name,'sipp_generic_runmad.osim');
+        end
+        result = load(name).result;
+        n_conv = n_conv + result.converged;
+        iter = iter + 1;
+    end
+end
+
+%% metabolic cost model simulations - screening
+metmodellist = ["umberger","bhargava","lichtwark","margaria","houdijk","minetti","vaeonly"];
+for i = 1:7
+    break
+    n_conv = 0;
+    iter = 1;
+    for j = 1:8
+        name = strcat(base_result_path,"metabolic",string(iter),"_",metmodellist(i),".mat");
+        if ~exist(name,'file')
+            runMetModelSim(metmodellist(i),name,'gait3d_pelvis213.osim',iter);
+        end
+        result = load(name).result;
+        n_conv = n_conv + result.converged;
+        iter = iter + 1;
+    end
+end
+
+%% mee model extra simulations - models that survived screening
+metmodellist = ["umberger","houdijk","minetti"];
+for i = 1:3
+    break
+    n_conv = 0;
+    iter = 1;
+    for m = 1:3
+        for j = 1:8
+            name = strcat(base_result_path,"metabolic",string(iter),"_",metmodellist(i),".mat");
+            if ~exist(name,'file')
+                runMetModelSim(metmodellist(i),name,'gait3d_pelvis213.osim',j,m);
+            end
+            result = load(name).result;
+            n_conv = n_conv + result.converged;
+            iter = iter + 1;
+        end 
+    end
+end
+
+%% umberger extra simulations using sipp-generic
+metmodellist = ["umberger"];
+n_conv = 0;
+iter = 1;
+for m = 1:3
+    break
+    for j = 1:8
+        name = strcat(base_result_path,"metabolic",string(iter),"_umberger_sipp.mat");
+        if ~exist(name,'file')
+            runMetModelSim("umberger",name,'sipp_generic_runmad.osim',j,m);
+        end
+        result = load(name).result;
+        n_conv = n_conv + result.converged;
+        iter = iter + 1;
+    end 
+end
+

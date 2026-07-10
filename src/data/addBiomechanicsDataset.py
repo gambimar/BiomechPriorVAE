@@ -21,15 +21,11 @@ target_dof_names = [
             'hip_rotation_r',
             'knee_angle_r',
             'ankle_angle_r',
-            'subtalar_angle_r',
-            'mtp_angle_r',
             'hip_flexion_l',
             'hip_adduction_l',
             'hip_rotation_l',
             'knee_angle_l',
             'ankle_angle_l',
-            'subtalar_angle_l',
-            'mtp_angle_l',
             'lumbar_extension',
             'lumbar_bending',
             'lumbar_rotation',
@@ -187,7 +183,7 @@ class AddBiomechanicsDataset(Dataset):
                 self.target_dof_indices.append(original_index)
             except ValueError:
                 print(f"Warning: DOF '{target_dof}' not found in dataset DOF names")
-
+        print(f"Target DOF indices: {self.target_dof_indices}")
         print(f"Dataset initialized with {len(self.subjects)} subjects")
 
     def __len__(self):
@@ -239,11 +235,11 @@ class AddBiomechanicsDataset(Dataset):
             input_dict[InputDataKeys.POS] = torch.row_stack([
                 torch.tensor(p.pos, dtype=self.dtype).detach()[self.target_dof_indices] for p in first_passes
             ])
-            input_dict[InputDataKeys.POS][:,[5,6,12,13]] = 0.0  # Zero out mtp and subtalar angles
+            #input_dict[InputDataKeys.POS][:,[5,6,12,13]] = 0.0  # Zero out mtp and subtalar angles (these don't exist anymore)
             input_dict[InputDataKeys.VEL] = torch.row_stack([
                 torch.tensor(p.vel, dtype=self.dtype).detach()[self.target_dof_indices] for p in first_passes
             ])
-            input_dict[InputDataKeys.VEL][:,[5,6,12,13]] = 0.0  # Zero out mtp and subtalar angles
+            #input_dict[InputDataKeys.VEL][:,[5,6,12,13]] = 0.0  # Zero out mtp and subtalar angles (these don't exist anymore)
             force = torch.row_stack([
                 torch.tensor(p.groundContactForce, dtype=self.dtype).detach() for p in first_passes
             ])
@@ -254,7 +250,7 @@ class AddBiomechanicsDataset(Dataset):
             input_dict[InputDataKeys.M] = torch.row_stack([
                 torch.tensor(p.tau, dtype=self.dtype).detach()[self.target_dof_indices] for p in first_passes
             ]) / subject.getMassKg() / 9.81 / subject.getHeightM()  # Normalize by body weight and height
-            input_dict[InputDataKeys.M][:,range(6)] = 0.0  # Zero out pelvis torques
+              # Zero out pelvis torques
             input_dict["M_ankle"] = torch.row_stack([
                 torch.tensor(p.tau, dtype=self.dtype).detach()[[10,17]] for p in first_passes
             ]) / subject.getMassKg() / 9.81 / subject.getHeightM()  # Normalize by body weight and height
