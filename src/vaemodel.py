@@ -32,13 +32,29 @@ class VAEModelWrapper:
             self.mask[54:58] = True
             self.result_scale = torch.ones(58, dtype=torch.float32, device=device)
             self.result_scale[-4:] = 27/4 # Scale force dimensions so that they weigh equally
-        elif num_dofs == 56: # Q, Qdot and M_ankle
+        elif num_dofs == 50: # Q, Qdot and F
             self.mask[:27] = True
+            self.mask[[5,6,12,13]] = False # zero out mtp and subtalar for foot joints
             self.mask[27:54] = True
-            self.mask[58+10] = True # right ankle
-            self.mask[58+17] = True # left ankle
-            self.result_scale = torch.ones(56, dtype=torch.float32, device=device)
-            self.result_scale[-2:] = 27/2 # Scale force dimensions so that they weigh equally
+            self.mask[[5+27,6+27,12+27,13+27]] = False # zero out mtp and subtalar for foot joints
+            self.mask[54:54+4] = True # forces
+            self.result_scale = torch.ones(50, dtype=torch.float32, device=device)
+            self.result_scale[-4:] = 27/4 # Scale force dimensions so that they weigh equally
+        elif num_dofs == 52: # Q, Qdot, F and M_ankle
+            self.mask[:27] = True
+            self.mask[[5,6,12,13]] = False # zero out mtp and subtalar for foot joints
+            self.mask[27:54] = True
+            self.mask[[5+27,6+27,12+27,13+27]] = False # zero out mtp and subtalar for foot joints
+            self.mask[54:54+4] = True # forces
+            self.mask[54+4+10] = True # right ankle
+            self.mask[54+4+17] = True # left ankle
+            self.result_scale = torch.ones(52, dtype=torch.float32, device=device)
+            #self.result_scale[:23] = 1/0.299 # scaling for velocity dimensions
+            #self.result_scale[23:46] = 1/2.3127 # scaling for position dimensions
+            #self.result_scale[-6:-2] = 1/0.4248 # Scale force dimensions so that they weigh equally
+            #self.result_scale[-2:] = 1/0.0884 # Scale ankle moment dimensions so that they weigh equally
+            self.result_scale[-6:-2] = 27/4 # Scale force dimensions so that they weigh equally
+            self.result_scale[-2:] = 27/2 # Scale ankle moment dimensions so that
         elif num_dofs == 29: # Q and M_ankle
             self.mask[:27] = True
             self.mask[58+10] = True # right ankle
@@ -116,9 +132,14 @@ class VAEModelWrapper:
         else:
             raise ValueError("Scaler is not loaded")
 
-    def _postprocess_torch(self, joint_angles_subset_tensor):
+    def _postprocess_torch(self, joint_angles_subset_tensor, mode="mean"):
         if self.scaler is not None:
-            joint_angles_unscaled = joint_angles_subset_tensor * self.scaler['scale_'] + self.scaler['mean_']
+            if mode == "mean":
+                joint_angles_unscaled = joint_angles_subset_tensor * self.scaler['scale_'] + self.scaler['mean_']
+            elif mode == "var":
+                joint_angles_unscaled = joint_angles_subset_tensor * self.scaler['scale_'] ** 2
+            else: 
+                raise ValueError(f"Unsupported mode: {mode}, only 'mean' and 'var' are supported.")
             return joint_angles_unscaled
         else:
             raise ValueError("Scaler is not loaded")
@@ -153,35 +174,48 @@ class VAEModelWrapper:
             subset_joints = joint_angles
         
         # Accumulate the forces - 8 dim for each Fx, Fy, Fz for each foot
-        Fxr, Fyr, Fzr, Fxl, Fyl, Fzl = subset_joints[:, 54:102].split(8, dim=1)
+        if joint_angles.shape[-1] == 135:  
+            Fxr, Fyr, Fzr, Fxl, Fyl, Fzl = subset_joints[:, 54:102].split(8, dim=1)
+        elif joint_angles.shape[-1] == 123:
+            Fxr, Fyr, Fzr, Fxl, Fyl, Fzl = subset_joints[:, 54:90].split(6, dim=1)
+        else:
+            raise ValueError(f'Number of joint angles {joint_angles.shape[-1]} is not supported. Input shape is {joint_angles.shape}')
         F_vec = torch.concatenate([
             Fyr.sum(dim=1,keepdim=True),
-            torch.sqrt(Fxr.sum(dim=1,keepdim=True)**2 + Fzr.sum(dim=1,keepdim=True)**2),
+            torch.sqrt(Fxr.sum(dim=1,keepdim=True)**2 + Fzr.sum(dim=1,keepdim=True)**2 + 1e-12),
             Fyl.sum(dim=1,keepdim=True),
-            torch.sqrt(Fxl.sum(dim=1,keepdim=True)**2 + Fzl.sum(dim=1,keepdim=True)**2)
+            torch.sqrt(Fxl.sum(dim=1,keepdim=True)**2 + Fzl.sum(dim=1,keepdim=True)**2 + 1e-12)
         ],dim=1)
-        subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 102:]], dim=1)
+
+        if joint_angles.shape[-1] == 135:
+            subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 102:]], dim=1)
+        elif joint_angles.shape[-1] == 123:
+            subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 90:]], dim=1)
         # Set mtp and subtalar to zero for foot joints
         scaling = torch.ones_like(subset_joints)
         scaling[:,[5,6,12,13]] = 0.0
         scaling[:,[3,10]] = -1 # Knee inverted
         scaling[:,[5+27,6+27,12+27,13+27]] = 0.0
         scaling[:,[3+27,10+27]] = -1
-        scaling[:, [-33+6+3, -33+6+10]] = -1 # knee moment inverted
-        scaling[:, [-27+13, -27+6]] = 0.0 # mtp moment zeroed
+        #scaling[:, [-33+6+3, -33+6+10]] = -1 # knee moment inverted
+        #scaling[:, [-27+13, -27+6]] = 0.0 # mtp moment zeroed
 
         subset_joints = subset_joints * scaling
         subset_joints = subset_joints[:,self.mask]
         processed_angles = self._preprocess_torch(subset_joints)
 
         x = processed_angles
-        mu, logvar = self.model.encode(x)
+        mu_latent, logvar_latent = self.model.encode(x)
         #z = self.model.reparameterize(mu, logvar)
-        mu = self.model.decode(mu)
-        rec_x_np = mu.squeeze(0)
+        mu_out, var_out = self.model.decode(mu_latent)
+        rec_x_np = mu_out.squeeze(0)
+        rec_var_np = var_out.squeeze(0)
         recon_subset = self._postprocess_torch(rec_x_np)
+        var_subset = self._postprocess_torch(rec_var_np, mode="var")
         # output = self._reconstruct_full_joints(recon_subset, original_pelvis)
-        error = torch.mean(((subset_joints - recon_subset)*self.result_scale)**2)
+        # error = torch.mean(((subset_joints - recon_subset)*self.result_scale)**2)
+        error = torch.nn.functional.gaussian_nll_loss(recon_subset, subset_joints, var_subset, reduction='mean')
+        # error = torch.mean(((subset_joints - recon_subset))**2 / var_subset) #+ torch.log(var_subset))
         if not getgrad:
             return error.detach().cpu().numpy()
         else: 
