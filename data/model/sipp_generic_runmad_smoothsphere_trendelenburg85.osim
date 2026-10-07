@@ -4623,7 +4623,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>819</max_isometric_force>
+					<max_isometric_force>122.85</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.053499999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -4682,7 +4682,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>573</max_isometric_force>
+					<max_isometric_force>85.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.084500000000000006</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -4741,7 +4741,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>653</max_isometric_force>
+					<max_isometric_force>97.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.064600000000000005</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -4800,7 +4800,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>270</max_isometric_force>
+					<max_isometric_force>40.5</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.068000000000000005</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -4859,7 +4859,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>285</max_isometric_force>
+					<max_isometric_force>42.75</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.056000000000000001</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -4918,7 +4918,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>323</max_isometric_force>
+					<max_isometric_force>48.45</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.037999999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -5275,7 +5275,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>156</max_isometric_force>
+					<max_isometric_force>23.4</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.52000000000000002</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -5641,7 +5641,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>233</max_isometric_force>
+					<max_isometric_force>34.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.095000000000000001</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -5846,7 +5846,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>573</max_isometric_force>
+					<max_isometric_force>85.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.14199999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -6333,7 +6333,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>444</max_isometric_force>
+					<max_isometric_force>66.6</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.025999999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -7726,7 +7726,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>819</max_isometric_force>
+					<max_isometric_force>122.85</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.053499999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -7785,7 +7785,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>573</max_isometric_force>
+					<max_isometric_force>85.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.084500000000000006</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -7844,7 +7844,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>653</max_isometric_force>
+					<max_isometric_force>97.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.064600000000000005</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -7903,7 +7903,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>270</max_isometric_force>
+					<max_isometric_force>40.5</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.068000000000000005</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -7962,7 +7962,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>285</max_isometric_force>
+					<max_isometric_force>42.75</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.056000000000000001</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -8021,7 +8021,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>323</max_isometric_force>
+					<max_isometric_force>48.45</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.037999999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -8378,7 +8378,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>156</max_isometric_force>
+					<max_isometric_force>23.4</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.52000000000000002</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -8744,7 +8744,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>233</max_isometric_force>
+					<max_isometric_force>34.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.095000000000000001</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -8949,7 +8949,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>573</max_isometric_force>
+					<max_isometric_force>85.95</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.14199999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -9436,7 +9436,7 @@
 						            </PathWrapSet>
 					          </GeometryPath>
 					          <!--Maximum isometric force that the fibers can generate-->
-					<max_isometric_force>444</max_isometric_force>
+					<max_isometric_force>66.6</max_isometric_force>
 					          <!--Optimal length of the muscle fibers-->
 					<optimal_fiber_length>0.025999999999999999</optimal_fiber_length>
 					          <!--Resting length of the tendon-->
@@ -11243,133 +11243,65 @@
 		    <!--Markers in the model.-->
 		<MarkerSet name="markerset">
 			      <objects>
-				        <Marker name="CP_RCPM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        				        <Marker name="CP_Rs1">
 					<socket_parent_frame>/bodyset/calcn_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.02 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.0019011578840796601 -0.01 -0.00382630379623308</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_RCPL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Rs2">
 					<socket_parent_frame>/bodyset/calcn_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.02 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.14838639994206301 -0.01 -0.028713422052654002</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_RCAM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Rs3">
 					<socket_parent_frame>/bodyset/calcn_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.14999999999999999 -0.02 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.13300117060705099 -0.01 0.051636247344956601</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_RCAL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Rs4">
 					<socket_parent_frame>/bodyset/calcn_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.14999999999999999 -0.02 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.066234666199163503 -0.01 0.026364160674169801</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_RTPM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Rs5">
 					<socket_parent_frame>/bodyset/toes_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.017999999999999999 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.059999999999999998 -0.01 -0.018760308461917698</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_RTPL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Rs6">
 					<socket_parent_frame>/bodyset/toes_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.017999999999999999 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.044999999999999998 -0.01 0.061856956754965199</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_RTAM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
-					<socket_parent_frame>/bodyset/toes_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.050000000000000003 -0.017999999999999999 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
-				        </Marker>
-				        <Marker name="CP_RTAL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
-					<socket_parent_frame>/bodyset/toes_r</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.050000000000000003 -0.017999999999999999 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
-				        </Marker>
-				        <Marker name="CP_LCPM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Ls1">
 					<socket_parent_frame>/bodyset/calcn_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.02 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.0019011578840796601 -0.01 0.00382630379623308</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_LCPL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Ls2">
 					<socket_parent_frame>/bodyset/calcn_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.02 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.14838639994206301 -0.01 0.028713422052654002</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_LCAM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Ls3">
 					<socket_parent_frame>/bodyset/calcn_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.14999999999999999 -0.02 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.13300117060705099 -0.01 -0.051636247344956601</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_LCAL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Ls4">
 					<socket_parent_frame>/bodyset/calcn_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.14999999999999999 -0.02 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.066234666199163503 -0.01 -0.026364160674169801</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_LTPM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Ls5">
 					<socket_parent_frame>/bodyset/toes_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.017999999999999999 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.059999999999999998 -0.01 0.018760308461917698</location>
+					          <fixed>true</fixed>
 				        </Marker>
-				        <Marker name="CP_LTPL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
+				        <Marker name="CP_Ls6">
 					<socket_parent_frame>/bodyset/toes_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0 -0.017999999999999999 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
-				        </Marker>
-				        <Marker name="CP_LTAM">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
-					<socket_parent_frame>/bodyset/toes_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.050000000000000003 -0.017999999999999999 0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
-				        </Marker>
-				        <Marker name="CP_LTAL">
-					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->
-					<socket_parent_frame>/bodyset/toes_l</socket_parent_frame>
-					          <!--The fixed location of the station expressed in its parent frame.-->
-					<location>0.050000000000000003 -0.017999999999999999 -0.029999999999999999</location>
-					          <!--Flag (true or false) specifying whether the marker is fixed in its parent frame during the marker placement step of scaling.  If false, the marker is free to move within its parent Frame to match its experimental counterpart.-->
-					<fixed>true</fixed>
+					          <location>0.044999999999999998 -0.01 -0.061856956754965199</location>
+					          <fixed>true</fixed>
 				        </Marker>
 				        <Marker name="STRN">
 					<!--Path to a Component that satisfies the Socket 'parent_frame' of type PhysicalFrame (description: The frame to which this station is fixed.).-->

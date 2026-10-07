@@ -14,10 +14,11 @@
 %> @date September, 2024
 %======================================================================
 
-
+terminate(pyenv)
 clear all 
 close all
 clc
+targetspeed = 1.3;
 
 %% Settings
 % Get path of this script
@@ -37,8 +38,9 @@ resultFolder   = 'results/IntroductionExamples'; % Relative from the path of the
 %enable flag
 useVAE = true;
 
-% 27: q, 31: q+F, 54: q+qdot, 58: q+qdot+F, 56: q+qdot+M_ankle
-nDimVae = 81;
+% 27: q, 31: q+F, 54: q+qdot, 58: q+qdot+F, 56: q+qdot+M_ankle, 60:
+% q+qdot+M_ankle+F
+nDimVae = 50;
 if nDimVae > 50
     latent_size = 24;
 else
@@ -54,7 +56,7 @@ if useVAE
     vaeParams.latentDim = latent_size;
     vaeParams.hiddenDim = 512;
     vaeParams.device = 'cpu';
-    vaeParams.weight = 1e3;
+    vaeParams.weight = 3;
 
     fprintf('VAE objective enabled\n')
 else
@@ -90,7 +92,7 @@ if useVAE
     standingVAE = vaeParams;
     % Call IntroductionExamples.standing3D() to specify the optimizaton problem
     % => Have a look into it ;)
-    problemStanding = standing3D(model, resultFileStanding, standingVAE);
+    problemStanding = standing3D(model, resultFileStanding);
 else
     problemStanding = standing3D(model, resultFileStanding);
 end
@@ -151,17 +153,8 @@ W.dur        = 0;    % No predefined duration
 W.speed      = Inf;  % Predefined speed
 initialGuess = resultFileStanding;
 
-% Load and resample tracking data 
-trackingData = TrackingData.loadStruct(dataFile);
-trackingData.preprocessData(N);
-% Extract speed and duration
-targetspeed_x =  trackingData.variables.mean{strcmp(trackingData.variables.type,'speed') & strcmp(trackingData.variables.name,'x')}; % speed in x direction
-targetspeed_z =  trackingData.variables.mean{strcmp(trackingData.variables.type,'speed') & strcmp(trackingData.variables.name,'z')}; % speed in z direction
-targetdur =  trackingData.variables.mean{strcmp(trackingData.variables.type,'duration')}; % duration
+fprintf('targetspeed_x: %f', targetspeed);
 
-fprintf('targetspeed_x: %f', targetspeed_x);
-fprintf('targetspeed_z: %f', targetspeed_z);
-fprintf('targetdur: %f', targetdur);
 
 % Create and automatically initalize an instance of our 2D model class.  
 % To fit the tracking data we have to scale the default model. This is done
@@ -174,7 +167,7 @@ if useVAE
     straightRunningVAE = vaeParams;
     % Call IntroductionExamples.standing3D() to specify the optimizaton problem
     % => Have a look into it ;)
-    problemRunning = running3D(model,trackingData,initialGuess,resultFileRunning,N,sym,W, targetspeed_x, targetspeed_z, targetdur, straightRunningVAE);
+    problemRunning = running3D(model,1,initialGuess,resultFileRunning,N,sym,W, targetspeed, straightRunningVAE);
 else
     problemRunning = running3D(model,trackingData,initialGuess,resultFileRunning,N,sym,W, targetspeed_x, targetspeed_z, targetdur);
 end
@@ -192,7 +185,6 @@ solver.setOptionField('print_level',5);
 % Solve the optimization problem and save the result. 
 resultRunning = solver.solve(problemRunning);
 resultRunning.save(resultFileRunning); 
-
 
 %% Result extraction
 idxStandingJointsAllNodes = problemStanding.idx.states(problemStanding.model.extractState('q'), 1:problemStanding.nNodes);

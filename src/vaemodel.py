@@ -174,14 +174,23 @@ class VAEModelWrapper:
             subset_joints = joint_angles
         
         # Accumulate the forces - 8 dim for each Fx, Fy, Fz for each foot
-        Fxr, Fyr, Fzr, Fxl, Fyl, Fzl = subset_joints[:, 54:102].split(8, dim=1)
+        if joint_angles.shape[-1] == 135:  
+            Fxr, Fyr, Fzr, Fxl, Fyl, Fzl = subset_joints[:, 54:102].split(8, dim=1)
+        elif joint_angles.shape[-1] == 123:
+            Fxr, Fyr, Fzr, Fxl, Fyl, Fzl = subset_joints[:, 54:90].split(6, dim=1)
+        else:
+            raise ValueError(f'Number of joint angles {joint_angles.shape[-1]} is not supported. Input shape is {joint_angles.shape}')
         F_vec = torch.concatenate([
             Fyr.sum(dim=1,keepdim=True),
-            torch.sqrt(Fxr.sum(dim=1,keepdim=True)**2 + Fzr.sum(dim=1,keepdim=True)**2),
+            torch.sqrt(Fxr.sum(dim=1,keepdim=True)**2 + Fzr.sum(dim=1,keepdim=True)**2 + 1e-12),
             Fyl.sum(dim=1,keepdim=True),
-            torch.sqrt(Fxl.sum(dim=1,keepdim=True)**2 + Fzl.sum(dim=1,keepdim=True)**2)
+            torch.sqrt(Fxl.sum(dim=1,keepdim=True)**2 + Fzl.sum(dim=1,keepdim=True)**2 + 1e-12)
         ],dim=1)
-        subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 102:]], dim=1)
+
+        if joint_angles.shape[-1] == 135:
+            subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 102:]], dim=1)
+        elif joint_angles.shape[-1] == 123:
+            subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 90:]], dim=1)
         # Set mtp and subtalar to zero for foot joints
         scaling = torch.ones_like(subset_joints)
         scaling[:,[5,6,12,13]] = 0.0

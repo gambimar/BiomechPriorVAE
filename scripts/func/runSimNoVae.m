@@ -14,7 +14,7 @@
 %> @date September, 2024
 %======================================================================
 
-function runSim(targetspeed, resultfilename, modelFile, metmodel)
+function runSimNoVae(targetspeed, resultfilename, modelFile, metmodel)
 
 terminate(pyenv)
 
@@ -60,11 +60,9 @@ if useVAE
     vaeParams.hiddenDim = 512;
     vaeParams.device = 'cpu';
     if metmodel == 0
-        vaeParams.weight = 3;
-    elseif contains(modelFile, 'trendelenburg')
-        vaeParams.weight = 1;
+        vaeParams.weight = 0;
     else
-        vaeParams.weight = 1;
+        vaeParams.weight = 0;
     end
     
 
@@ -203,12 +201,10 @@ elseif contains(modelFile, 'smoothsphere_stiff10x')
     model = Gait3d_smoothsphere_stiff10x(modelFile);
 elseif contains(modelFile, 'smoothsphere')
     model = Gait3d_smoothsphere(modelFile);
-    if contains(modelFile, 'trendelenburg')
-        model = Gait3d_smoothsphere(modelFile);
-    end
 else
     model = Gait3d(modelFile);
 end
+
 % Call IntroductionExamples.running3D() to specify the optimizaton problem
 % => Take a look inside the function ;)
 if useVAE

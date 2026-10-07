@@ -14,7 +14,10 @@
 %> @date September, 2024
 %======================================================================
 
-function runSim(targetspeed, resultfilename, modelFile, metmodel)
+function runMetModelSim(metmodel, resultfilename, modelFile, iter, no_ig)
+if nargin < 5
+    no_ig = 1;
+end
 
 terminate(pyenv)
 
@@ -31,9 +34,6 @@ dataFile       = 'running_3D.mat';               % Straight running data used in
 dataFileCurved = 'curvedRunning_3D.mat';         % Curved running data used in 2020 paper
 if nargin < 3
     modelFile      = 'gait3d_pelvis213.osim';        % Name of our default model. You can add a new model in the osim_files folder of Gait3d, but you can also specify the path to a model similar to how it is done for the dataFile
-end
-if nargin < 4
-    metmodel = 0
 end
 resultFolder   = 'results/IntroductionExamples'; % Relative from the path of the repository
 
@@ -59,14 +59,7 @@ if useVAE
     vaeParams.latentDim = latent_size;
     vaeParams.hiddenDim = 512;
     vaeParams.device = 'cpu';
-    if metmodel == 0
-        vaeParams.weight = 3;
-    elseif contains(modelFile, 'trendelenburg')
-        vaeParams.weight = 1;
-    else
-        vaeParams.weight = 1;
-    end
-    
+    vaeParams.weight = 1;
 
     fprintf('VAE objective enabled\n')
 else
@@ -91,23 +84,14 @@ if ~exist([path2repo,filesep,resultFolder], 'dir')
 end
 
 
+% If the model is standing on the toes, this is a local optimum. Rerun this
+% section and you will find a different solution, due to a different random
+% initial guess.
+
+
 %% Standing: Simulate standing with minimal effort without tracking data for one point in time (static)
 % Create an instane of our 3D model class using the default settings
-% check contact-model variants before the generic 'smoothsphere' catch-all,
-% since their names also contain the substring 'smoothsphere'
-if contains(modelFile, 'smoothsphere_softdamp2')
-    model = Gait3d_smoothsphere_softdamp2(modelFile);
-elseif contains(modelFile, 'smoothsphere_softdamp4')
-    model = Gait3d_smoothsphere_softdamp4(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer2')
-    model = Gait3d_smoothsphere_stiffer2(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer4')
-    model = Gait3d_smoothsphere_stiffer4(modelFile);
-elseif contains(modelFile, 'smoothsphere')
-    model = Gait3d_smoothsphere(modelFile);
-else
-    model = Gait3d(modelFile);
-end
+model = Gait3d(modelFile);
 % => We use a mex function for some functionality of the model. This was
 % automatically initialized with the correct settings for the current
 % model. (see command line output)
@@ -151,84 +135,67 @@ end
 % section and you will find a different solution, due to a different random
 % initial guess.
 
+
 %% Straight running: simulate running with minimal effort while tracking data
 % Simulation settings.
 N = 50; % number of collocation nodes
 sym = 1; % do not simulate symmetric movement
 W.effMuscles = 0; % Weight of effort term in objective 1000
-if metmodel == 0
-    W.effMusclesAct = 1e3; % According to Nitschke, 2019
-    W.effMusclesTor = 1; %1.0e3 / 10;
-    W.metcost = 0; % 5.0e2 / 92 / 74.9646;
-elseif strcmp(metmodel,"none")
-    display("No metabolic cost model used")
-    W.effMusclesAct = 0; % According to Nitschke, 2019
-    W.effMusclesTor = 0; %1.0e3 / 10;
-    W.metcost = 0; % 5.0e2 / 92 / 74.9646;
-else
-    W.effMusclesAct = 0.0; %1e3; % According to Nitschke, 2019
-    W.effMusclesTor = 1; %1.0e3 / 10;
-    W.metcost = 1; % 5.0e2 / 92 / 74.9646;
-end
+W.effMusclesAct = 0;%1e3; %1e3; % According to Nitschke, 2019
+W.effMusclesTor = 1; %1.0e3 / 10;
+W.metcost = 1;%.1;%1; % 5.0e2 / 92 / 74.9646;
 W.effTorques = 0;    % Weight of torque term in objective
 W.reg        = 0; % Weight of regularization term in objective
 W.track      = 0;    % Weight of tracking term in objective
 W.dur        = 0;    % No predefined duration
-if targetspeed < 0.01
-    W.speed      = 1;    % Predefined speed
-else
-    W.speed      = Inf;  % Predefined speed
+W.speed      = 1;  % no predefined speed
+
+%% load the first converged trial
+speeds_ = ["1.03","1.13","1.23","1.33","1.43","1.53","1.63","1.73"];
+no = 1;
+conv = 0;
+while conv < no_ig
+    initialGuess = which(strcat("generic",string(no),"_",speeds_(iter),".mat"));
+    conv = conv + load(initialGuess).result.converged;
+    no = no + 1;
 end
-W.heelstrikeVariance = 100;
-initialGuess = resultFileStanding;
+oldname = strrep(resultfilename,"_sipp","");
+if exist()
+%initialGuess = resultFileStanding;
+
+%%
+targetspeed = [0.2, 2];
 
 
 % Create and automatically initalize an instance of our 2D model class.  
 % To fit the tracking data we have to scale the default model. This is done
 % using the height and mass of the participant.
-% check if model name contains "smoothspheres"
-% check contact-model variants before the generic 'smoothsphere' catch-all,
-% since their names also contain the substring 'smoothsphere'
-if contains(modelFile, 'smoothsphere_softdamp2')
-    model = Gait3d_smoothsphere_softdamp2(modelFile);
-elseif contains(modelFile, 'smoothsphere_softdamp4')
-    model = Gait3d_smoothsphere_softdamp4(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer2')
-    model = Gait3d_smoothsphere_stiffer2(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer4')
-    model = Gait3d_smoothsphere_stiffer4(modelFile);
-elseif contains(modelFile, 'smoothsphere_nodamp')
-    model = Gait3d_smoothsphere_nodamp(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiff10x')
-    model = Gait3d_smoothsphere_stiff10x(modelFile);
-elseif contains(modelFile, 'smoothsphere')
-    model = Gait3d_smoothsphere(modelFile);
-    if contains(modelFile, 'trendelenburg')
-        model = Gait3d_smoothsphere(modelFile);
-    end
-else
-    model = Gait3d(modelFile);
+model = Gait3d(modelFile);
+if strcmp(metmodel,"vaeonly")
+    W.metcost = 0;
 end
+
 % Call IntroductionExamples.running3D() to specify the optimizaton problem
 % => Take a look inside the function ;)
 if useVAE
     straightRunningVAE = vaeParams;
     % Call IntroductionExamples.standing3D() to specify the optimizaton problem
     % => Have a look into it ;)
-    problemRunning = running3D(model,1,initialGuess,resultFileRunning,N,sym,W, targetspeed, straightRunningVAE,metmodel);
+    problemRunning = running3D(model,0,initialGuess,resultFileRunning,N,sym,W, targetspeed, straightRunningVAE, metmodel);
 else
     problemRunning = running3D(model,trackingData,initialGuess,resultFileRunning,N,sym,W, targetspeed_x, targetspeed_z, targetdur);
 end
 
+problemRunning.plotLog = 1;
 %problemRunning.derivativetest
 % Create solver and change solver settings
 solver = IPOPT();
-solver.setOptionField('max_iter', 10000);
-solver.setOptionField('tol', 1e-3); % 0.0005
+solver.setOptionField('max_iter', 8000);
+solver.setOptionField('tol', 5e-3); % 0.0005
 solver.setOptionField('print_level',5);
-solver.setOptionField('dual_inf_tol', 1e-3);
+solver.setOptionField('dual_inf_tol', 5e-3);
 solver.setOptionField('constr_viol_tol',1e-4);
-
+%solver.setOptionField('acceptable_tol', 1e-6); 
 
 % Solve the optimization problem and save the result. 
 resultRunning = solver.solve(problemRunning);

@@ -28,6 +28,7 @@
 %> @retval  problem        Collocation: Generated standing problem
 % ======================================================================
 function problem = running3D(model,plotlog,initialFile,resultFile,N,sym,W, targetspeed, vaeParams, metmodel)
+
 %% VAE settings
 if nargin >= 9 && ~isempty(vaeParams)
     useVAE = true;
@@ -64,8 +65,9 @@ end
 plotLog = plotlog;
 problem = Collocation(model,N,'BE',resultFile,plotLog);
 
-states_min = repmat(model.states.xmin,1,N);
-states_max = repmat(model.states.xmax,1,N);
+% 2. Change bounds of model
+states_min = repmat(model.states.xmin,1,N+1);
+states_max = repmat(model.states.xmax,1,N+1);
 idxPelvisX = model.extractState('q', 'pelvis_tx');
 idxPelvisY = model.extractState('q', 'pelvis_ty');
 idxPelvisZ = model.extractState('q', 'pelvis_tz');
@@ -113,11 +115,10 @@ states_max(model.extractState('q', {'pro_sup_r', 'pro_sup_l'}), :)          = 15
 % 3. Add states and controls to the collocation problem
 % Add states using the adapted bounds from step 2
 problem.addOptimVar('states',states_min,states_max);
-if contains(model.osim.file, "trendelenburg")
-    problem.addOptimVar('controls',repmat(model.controls.xmin,1,N), repmat(model.controls.xmax.*0+1,1,N));
-else
-    problem.addOptimVar('controls',repmat(model.controls.xmin,1,N), repmat(model.controls.xmax,1,N));
-end
+% Add controls
+problem.addOptimVar('controls',model.controls.xmin,model.controls.xmax); 
+problem.addOptimVar('controls',repmat(model.controls.xmin,1,N+1), repmat(model.controls.xmax,1,N+1));
+
 % 4. Add duration to the collocation problem 
 if isinf(W.dur)
     if sym
@@ -127,19 +128,7 @@ if isinf(W.dur)
     end
 else
     if sym
-        if isinf(W.speed)
-            if targetspeed > 3
-                max_dur = 0.4;
-            elseif targetspeed > 2.5
-                max_dur = 0.5;
-            else
-                max_dur = 1 / 2 / (targetspeed * 0.27 + 0.37);
-            end
-            problem.addOptimVar('dur',0.2,max_dur); % for metabolic models -- bound time to 0.7 because the double-steps are then less likely to occur
-        else
-            max_dur = .7;
-            problem.addOptimVar('dur',0.2,max_dur); % for metabolic models -- bound time to 0.7 because the double-steps are then less likely to occur
-        end
+        problem.addOptimVar('dur',0.2,1);
     else
         problem.addOptimVar('dur',0.2,2);
     end
@@ -150,8 +139,7 @@ if isinf(W.speed)
     % problem.addOptimVar('speed',[targetspeed_x; targetspeed_z],[targetspeed_x; targetspeed_z]);
     problem.addOptimVar('speed', [targetspeed;-0.01], [targetspeed;0.01], [targetspeed;-0.007])
 else
-    display("Speed is a decision variable")
-    problem.addOptimVar('speed',[0.2;-0.01],[1.8,0.01], [1;0.003]); % Do not initialize with 0 to avoid errors in effortTermMuscles.m
+    problem.addOptimVar('speed',[0.2;-0.01],[2.3,0.01], [1;0.003]); % Do not initialize with 0 to avoid errors in effortTermMuscles.m
 end
 % targetspeed_x: 4.001098 targetspeed_z: -0.007782 targetdur: 0.771250
 
@@ -218,53 +206,7 @@ if vaeParams.weight ~= 0
     end
 end
 
-%% Heelstrike count penalty objective
-%if isfield(W, 'heelstrikeCount') && W.heelstrikeCount ~= 0
-%    threshold = 0.05;
-%    if isfield(W, 'heelstrikeThreshold'), threshold = W.heelstrikeThreshold; end
-%    steepness = 0.01;
-%    if isfield(W, 'heelstrikeSteepness'), steepness = W.heelstrikeSteepness; end
-%    eps_val = 1e-6;
-%    if isfield(W, 'heelstrikeEps'), eps_val = W.heelstrikeEps; end
-%    try
-%        problem.addObjective(@heelstrikeCountPenalty, W.heelstrikeCount, threshold, steepness, eps_val);
-%        fprintf('Successfully added Heelstrike Count Penalty objective!\n')
-%    catch ME
-%        error('Failed to add Heelstrike Count Penalty objective: %s', ME.message);
-%    end
-%end
-
-%% Heelstrike variance penalty objective
-if isfield(W, 'heelstrikeVariance') && W.heelstrikeVariance ~= 0
-    force_threshold = 0.05;
-    if isfield(W, 'heelstrikeThreshold'), force_threshold = W.heelstrikeThreshold; end
-    std_limit = 0.03;
-    if isfield(W, 'heelstrikeStdLimit'), std_limit = W.heelstrikeStdLimit; end
-    try
-        problem.addObjective(@heelstrikeVariancePenalty, W.heelstrikeVariance, force_threshold, std_limit);
-        fprintf('Successfully added Heelstrike Variance Penalty objective!\n')
-    catch ME
-        error('Failed to add Heelstrike Variance Penalty objective: %s', ME.message);
-    end
-end
-
-%if ~isfield(W, 'useHeelstrikeTimingConstraint') || W.useHeelstrikeTimingConstraint
-%    % Heelstrike timing constraint: F_R(1) < 0.3 BW, F_R(2) > 0.3 BW (and left foot corresponding nodes if not symmetric)
-%    threshold_timing = 0.3;
-%    c_lb = [0; threshold_timing];
-%    c_ub = [threshold_timing; Inf];
-%    if ~sym
-%        c_lb = [c_lb; 0; threshold_timing];
-%        c_ub = [c_ub; threshold_timing; Inf];
-%    end
-%    try
-%        problem.addConstraint(@heelstrikeTimingConstraint, c_lb, c_ub, threshold_timing, sym);
-%        fprintf('Successfully added Heelstrike Timing Constraint!\n')
-%    catch ME
-%        error('Failed to add Heelstrike Timing Constraint: %s', ME.message);
-%    end
-%end
-
 % 8. Add constraints
-problem.addConstraint(@dynamicPeriodicConstraints, repmat(model.constraints.fmin, 1, N), repmat(model.constraints.fmax, 1, N), sym);
+problem.addConstraint(@dynamicConstraints,repmat(model.constraints.fmin,1,N),repmat(model.constraints.fmax,1,N))
+problem.addConstraint(@periodicityConstraint,zeros(model.nStates+model.nControls,1),zeros(model.nStates+model.nControls,1),sym)
 end
