@@ -7,6 +7,10 @@
 #   ./runGait.sh --model=sipp_generic_runmad.osim --metmodel=0 --min=0.73 --max=1.63
 #   ./runGait.sh --model=gait3d_pelvis213.osim    # metmodel defaults to 0
 
+export LC_ALL=C
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || exit 2
+cd -- "$repo_dir" || exit 2
+
 min_speed="0.73"
 max_speed="1.63"
 model_file=""
@@ -46,7 +50,9 @@ if [ -z "$model_file" ]; then
 fi
 
 # Derive a short prefix from the model filename (strip .osim extension)
-model_stem="${model_file%.osim}"
+model_stem="${model_file//\\//}"
+model_stem="${model_stem##*/}"
+model_stem="${model_stem%.osim}"
 # Replace any dots or spaces with underscores for safety
 model_stem="${model_stem//[. ]/_}"
 
@@ -58,38 +64,33 @@ else
     echo "Running gait simulations: model=${model_file}, metmodel=${metmodel}"
 fi
 
-# Format min and max speeds
-min_formatted=$(printf "%.2f" "$min_speed" 2>/dev/null || echo "$min_speed")
-max_formatted=$(printf "%.2f" "$max_speed" 2>/dev/null || echo "$max_speed")
-
-# Generate the historical valid speed bins
-valid_speeds=()
-# add 0 speed (e.g. free speed walking)
-valid_speeds+=("0.00")
-# 0.73 to 3.53 in steps of 0.1
-for s in $(seq 0.73 0.1 3.53); do
-    valid_speeds+=($(printf "%.2f" "$s"))
-done
-# 3.73 to 5.63 in steps of 0.2
-for s in $(seq 3.73 0.2 5.63); do
-    valid_speeds+=($(printf "%.2f" "$s"))
-done
-for s in $(seq 6 1 7); do
-    valid_speeds+=($(printf "%.2f" "$s"))
-done
-# Filter valid speeds to range [min_speed, max_speed]
-speeds_to_run=()
-for s in "${valid_speeds[@]}"; do
-    if (( $(echo "$s >= $min_formatted" | bc -l) )) && (( $(echo "$s <= $max_formatted" | bc -l) )); then
-        speeds_to_run+=("$s")
-    fi
-done
-
-if [ ${#speeds_to_run[@]} -eq 0 ]; then
-    echo "Error: No valid gait speed bins found in the range [$min_formatted, $max_formatted]."
-    echo "Valid bins are: 0.73 - 3.53 in 0.1 steps, and 3.73 - 5.63 in 0.2 steps."
+number_pattern='^([0-9]+([.][0-9]*)?|[.][0-9]+)$'
+if [[ ! $min_speed =~ $number_pattern || ! $max_speed =~ $number_pattern ]]; then
+    echo "Error: --min and --max must be nonnegative decimal speeds."
     exit 1
 fi
+
+# Generate integer hundredths to avoid accumulating floating-point steps.
+selected_speeds=$(awk -v min="$min_speed" -v max="$max_speed" '
+    function emit(s) { if (s / 100 >= min && s / 100 <= max) printf "%.2f\n", s / 100 }
+    BEGIN {
+        emit(0)
+        for (s = 73; s <= 353; s += 10) emit(s)
+        for (s = 373; s <= 563; s += 20) emit(s)
+        emit(600)
+        emit(700)
+    }') || exit 2
+if [ -z "$selected_speeds" ]; then
+    echo "Error: No valid gait speed bins found in the range [$min_speed, $max_speed]."
+    echo "Valid bins are: 0.00, 0.73 - 3.53 in 0.1 steps, 3.73 - 5.53 in 0.2 steps, 6.00, 7.00."
+    exit 1
+fi
+mapfile -t speeds_to_run <<< "$selected_speeds"
+
+# A quote inside a MATLAB character vector is represented by two quotes.
+matlab_prefix="${prefix//\'/\'\'}"
+matlab_model="${model_file//\'/\'\'}"
+matlab_metmodel="${metmodel//\'/\'\'}"
 
 echo "Speeds to run: ${speeds_to_run[*]}"
 
@@ -100,10 +101,11 @@ for speed_formatted in "${speeds_to_run[@]}"; do
     echo "================================================================="
 
     while true; do
-        LM_PROJECT=iwse matlab -batch "addpath('scripts/func'); done = runGaitSingleStep($speed_formatted, '$prefix', '$model_file', '$metmodel'); exit(double(done));"
+        LM_PROJECT=iwse matlab -batch "addpath('scripts/func'); done = runGaitSingleStep($speed_formatted, '$matlab_prefix', '$matlab_model', '$matlab_metmodel'); exit(10 * double(done));"
         exit_code=$?
 
-        if [ $exit_code -eq 1 ]; then
+        # MATLAB -batch uses 1 for unhandled errors; reserve 10 for completion.
+        if [ $exit_code -eq 10 ]; then
             echo "Speed $speed_formatted: Successfully reached 10 converged runs."
             break
         elif [ $exit_code -eq 0 ]; then

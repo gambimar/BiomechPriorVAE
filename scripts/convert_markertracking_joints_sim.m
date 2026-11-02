@@ -38,13 +38,21 @@ end
 if ~exist(dstDir, 'dir')
     mkdir(dstDir);
 end
+[~, srcAttributes] = fileattrib(srcDir);
+[~, dstAttributes] = fileattrib(dstDir);
+srcDir = srcAttributes.Name;
+dstDir = dstAttributes.Name;
+srcPrefix = fullfile(srcDir, '');
+if srcPrefix(end) ~= filesep
+    srcPrefix = [srcPrefix filesep];
+end
 
 matFiles = list_mat_files(srcDir);
 fprintf('Found %d .mat files under %s\n', numel(matFiles), srcDir);
 count = 0;
 for i = 1:numel(matFiles)
     inFile = matFiles{i};
-    outFile = strrep(inFile, [srcDir filesep], [dstDir filesep]);
+    outFile = fullfile(dstDir, inFile(numel(srcPrefix) + 1:end));
     outDir = fileparts(outFile);
     if ~exist(outDir, 'dir')
         mkdir(outDir);

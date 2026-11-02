@@ -150,20 +150,6 @@ W.track      = 0;    % Weight of tracking term in objective
 W.dur        = 0;    % No predefined duration
 W.speed      = 1;  % no predefined speed
 
-%% load the first converged trial
-speeds_ = ["1.03","1.13","1.23","1.33","1.43","1.53","1.63","1.73"];
-no = 1;
-conv = 0;
-while conv < no_ig
-    initialGuess = which(strcat("generic",string(no),"_",speeds_(iter),".mat"));
-    conv = conv + load(initialGuess).result.converged;
-    no = no + 1;
-end
-oldname = strrep(resultfilename,"_sipp","");
-if exist(oldname)
-    %initialGuess = oldname;
-end
-
 initialGuess = resultFileStanding;
 
 %%

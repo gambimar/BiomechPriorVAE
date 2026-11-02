@@ -1,11 +1,15 @@
 function done = runGaitSingleStepVaeOff(speed, prefix, model_file, metmodel)
     % Set up paths so that the script can run from any folder
-    addpath(genpath("/home/rzlin/ri94mihu/phd/BiomechPriorVAE/"));
-    addpath(genpath("/home/rzlin/ri94mihu/phd/mexIPOPT"));
+    path2repo = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+    addpath(genpath(path2repo));
+    addpath(genpath(fullfile(fileparts(path2repo), 'mexIPOPT')));
 
     % set up matlabs rng generator
 
-    base_result_path = "/home/rzlin/ri94mihu/phd/BiomechPriorVAE/result/simulations/";
+    base_result_path = fullfile(path2repo, 'result', 'simulations');
+    if ~isfolder(base_result_path)
+        mkdir(base_result_path);
+    end
     n_conv = 0;
     iter = 1;
     max_iter = 10;
@@ -14,7 +18,7 @@ function done = runGaitSingleStepVaeOff(speed, prefix, model_file, metmodel)
     end
     while n_conv < max_iter
         rng(iter+30)
-        name = strcat(base_result_path, prefix,'noVae', string(iter), "_", string(speed), ".mat");
+        name = fullfile(base_result_path, strcat(prefix,'noVae', string(iter), "_", string(speed), ".mat"));
         if ~exist(name,'file')
             if nargin < 4 || isempty(metmodel) || strcmp(metmodel, '0')
                 runSimNoVae(speed, name, model_file);

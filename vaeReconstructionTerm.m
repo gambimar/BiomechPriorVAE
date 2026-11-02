@@ -7,12 +7,52 @@ if strcmp(option,'init')
     if ~isfield(obj.idx,'states')
         error('Model states are not stored in state vector X.')
     end
-    obj.objectiveInit.(fctname).pyenv = pyenv(Version="/home/rzlin/ri94mihu/phd/BiomechPriorVAE/.venv/bin/python3.12", ExecutionMode="OutOfProcess");
-    insert(py.sys.path, int64(0), what("BiomechPriorVAE").path);
-    insert(py.sys.path, int64(0), strcat(what("BiomechPriorVAE").path,filesep,"src"));
+    modulePath = which('vaemodel.py');
+    if isempty(modulePath)
+        error('Add the BiomechPriorVAE src directory to the MATLAB path.');
+    end
+    sourceDir = fileparts(modulePath);
+    repositoryDir = fileparts(sourceDir);
+    if isfield(vaeParams, 'pythonExecutable') && ~isempty(vaeParams.pythonExecutable)
+        pythonExecutable = vaeParams.pythonExecutable;
+    elseif ispc
+        pythonExecutable = fullfile(repositoryDir, '.venv', 'Scripts', 'python.exe');
+    else
+        pythonExecutable = fullfile(repositoryDir, '.venv', 'bin', 'python');
+    end
+    if ~isfile(pythonExecutable)
+        error('Python interpreter not found: %s. Set vaeParams.pythonExecutable.', pythonExecutable);
+    end
+    obj.objectiveInit.(fctname).pyenv = pyenv(Version=pythonExecutable, ExecutionMode="OutOfProcess");
+    if int64(py.sys.path.count(repositoryDir)) == 0
+        insert(py.sys.path, int64(0), repositoryDir);
+    end
+    if int64(py.sys.path.count(sourceDir)) == 0
+        insert(py.sys.path, int64(0), sourceDir);
+    end
 
-    obj.objectiveInit.(fctname).idxJointsAllNodes = obj.idx.states(:, 1:obj.nNodes);
+    [currentRows, momentOrder] = vaeStateIndices(obj.model);
+    obj.objectiveInit.(fctname).currentIdx = obj.idx.states(currentRows, 1:obj.nNodes);
+    obj.objectiveInit.(fctname).momentOrder = momentOrder;
     obj.objectiveInit.(fctname).vaeParams = vaeParams;
+    [useMoments, stateKeys] = vaeFeatureLayout(vaeParams);
+    obj.objectiveInit.(fctname).useMoments = useMoments;
+    if ~isempty(stateKeys)
+        pythonStateKeys = py.tuple(stateKeys);
+    else
+        pythonStateKeys = py.None;
+    end
+    if obj.objectiveInit.(fctname).useMoments
+        if isfield(vaeParams, 'momentScale')
+            momentScale = vaeParams.momentScale;
+        else
+            momentScale = 1 / (9.81 * obj.model.bodymass * obj.model.bodyheight);
+        end
+        validateattributes(momentScale, {'numeric'}, {'scalar', 'finite', 'positive'});
+    else
+        momentScale = 0;
+    end
+    obj.objectiveInit.(fctname).momentScale = momentScale;
     
     try
         %py.sys.path().append(vaeParams.pythonPath);
@@ -24,7 +64,8 @@ if strcmp(option,'init')
             pyargs('num_dofs', int32(vaeParams.numDofs), ...
                    'latent_dim', int32(vaeParams.latentDim), ...
                    'hidden_dim', int32(vaeParams.hiddenDim), ...
-                   'device', vaeParams.device));
+                   'device', vaeParams.device, ...
+                   'state_keys', pythonStateKeys));
         
         if ~success
             error('Failed to initialize VAE model');
@@ -40,49 +81,26 @@ if strcmp(option,'init')
     return;
 end
 
-idxJointsAllNodes = obj.objectiveInit.(fctname).idxJointsAllNodes;
+currentIdx = obj.objectiveInit.(fctname).currentIdx;
 vaeModule = obj.objectiveInit.(fctname).vaeModule;
-end_ = obj.model.nStates;
-currentIdx = idxJointsAllNodes([7:33 40:66 251:6:304 252:6:304 253:6:304 305:6:end_ 306:6:end_ 307:6:end_], 1:obj.nNodes);
+useMoments = obj.objectiveInit.(fctname).useMoments;
+mom_scale_fac = obj.objectiveInit.(fctname).momentScale;
 currentJoints = X(currentIdx);
 
-x_ = X(obj.idx.states);
-M = zeros(obj.nNodes, 33);
-dMdx = {};
-for i = 1:obj.nNodes
-    [M_,dM_,dU_] = obj.model.getJointmoments(x_(:,i));
-    if i == 1
-        dMdx = {dM_};
-        dUdx = {dU_};
-    else
-        dMdx = [dMdx, {dM_}];
-        dUdx = [dUdx, {dU_}];
-    end
-    M(i,:) = M_';
-end
-% Hardcoding mass and height here
-mom_scale_fac = 1/9.81/1.83/65.9; % Hamner default values
-currentJoints = [currentJoints; M'*mom_scale_fac];
+[M, dMdx, dUdx] = vaeJointMoments(obj.model, X(obj.idx.states), X(obj.idx.controls), ...
+    useMoments, strcmp(option, 'gradient'), obj.objectiveInit.(fctname).momentOrder);
+currentJoints = [currentJoints; M*mom_scale_fac];
 
 if strcmp(option,'objval')
     pyJoints = py.numpy.array(currentJoints);
     pyResult = vaeModule.reconstruct(pyJoints);
-    nodeError = double(pyResult);
-    output = nodeError;
-
-    
+    output = double(pyResult);
 elseif strcmp(option,'gradient')
-    output = zeros(size(X));
     pyJoints = py.numpy.array(currentJoints);
     pyResult = vaeModule.reconstruct_withgrad(pyJoints);
     gradient = double(pyResult);
-    dVAEdx = gradient(:,1:102);
-    output(currentIdx) = dVAEdx';
-    dVEAdM = gradient(:,103:end);
-    for i = 1:obj.nNodes
-        output(obj.idx.states(:,i)) = output(obj.idx.states(:,i)) + dMdx{i} * dVEAdM(i,:)'*mom_scale_fac;
-        output(obj.idx.controls(:,i)) = output(obj.idx.controls(:,i)) + dUdx{i} * dVEAdM(i,:)'*mom_scale_fac;
-    end
+    output = vaeStateGradient(X, gradient, currentIdx, obj.idx, mom_scale_fac, dMdx, dUdx, useMoments);
+else
+    error('vaeReconstructionTerm:InvalidOption', 'Unknown VAE objective option: %s', option);
 end
-
 end

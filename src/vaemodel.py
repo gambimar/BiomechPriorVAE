@@ -1,20 +1,40 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-import pickle
-from sklearn.preprocessing import StandardScaler
-import os
+from src.scaler import load_scaler
 from src.vaetrainer import BiomechPriorVAE
 
 
 
 class VAEModelWrapper:
-    def __init__(self, model_path, scaler_path, num_dofs=27, latent_dim=20, hidden_dim=512, device='cpu'):
+    def __init__(self, model_path, scaler_path, num_dofs=27, latent_dim=20, hidden_dim=512, device='cpu', state_keys=None):
         self.device = device
         self.num_dofs = num_dofs
         self.mask = torch.zeros(91, dtype=torch.bool, device=device)
-        if num_dofs == 27:
+        if state_keys is None and num_dofs in (23, 25, 46, 48, 69):
+            state_keys = {
+                23: ('pos',), 25: ('pos', 'M_ankle'),
+                46: ('pos', 'vel'), 48: ('pos', 'vel', 'M_ankle'),
+                69: ('pos', 'vel', 'tau'),
+            }[num_dofs]
+        self.feature_indices = None
+        if state_keys is not None:
+            pos = [i for i in range(27) if i not in (5, 6, 12, 13)]
+            blocks = {
+                'pos': pos,
+                'vel': [27 + i for i in pos],
+                'force': list(range(54, 58)),
+                'M_ankle': [68, 75],
+                'tau': [64 + i for i in pos],
+            }
+            if not state_keys or len(set(state_keys)) != len(state_keys) or any(key not in blocks for key in state_keys):
+                raise ValueError('state_keys must be unique supported feature groups')
+            indices = [i for key in state_keys for i in blocks[key]]
+            if len(indices) != num_dofs:
+                raise ValueError(f'state_keys select {len(indices)} features, expected {num_dofs}')
+            self.feature_indices = torch.tensor(indices, device=device)
+            self.mask[self.feature_indices] = True
+            self.result_scale = torch.ones(num_dofs, dtype=torch.float32, device=device)
+        elif num_dofs == 27:
             self.mask[:27] = True
             self.result_scale = torch.ones(27, dtype=torch.float32, device=device)
         elif num_dofs == 54: #Here q and M
@@ -69,42 +89,27 @@ class VAEModelWrapper:
             self.result_scale[-27:] = 1 # scaling for torque dimensions
             self.result_scale[27:54] = 1 # scaling for velocity dimensions
         else:
-            raise ValueError(f"Unsupported num_dofs: {num_dofs}, only 27 or 54 are supported.")
+            raise ValueError(f"Unsupported num_dofs: {num_dofs}; supply explicit state_keys for a trained feature layout")
+
+        self.input_scale = torch.ones(91, dtype=torch.float32, device=device)
+        self.input_scale[[5, 6, 12, 13, 32, 33, 39, 40]] = 0
+        self.input_scale[[3, 10, 30, 37]] = -1
 
         self.model = BiomechPriorVAE(
             num_dofs=num_dofs,
             latent_dim=latent_dim,
             hidden_dim=hidden_dim
         ).to(device)
-        state_dict = torch.load(model_path, map_location=device)
+        state_dict = torch.load(model_path, map_location=device, weights_only=True)
         self.model.load_state_dict(state_dict)
         self.model.eval()
+        self.model.requires_grad_(False)
         print(f"Successfully loaded VAE model from: {model_path}")
 
-        # Load scaler dictionary with mean_ and scale_ tensors
-        self.scaler = None
-        with open(scaler_path, 'rb') as f:
-            self.scaler = pickle.load(f)
+        self.scaler = load_scaler(scaler_path, device=device)
         print(f"Successfully loaded scaler from: {scaler_path}")
-
-        # Check if scaler is a dict with mean_ and scale_
-        if isinstance(self.scaler, dict):
-            if 'mean_' in self.scaler and 'scale_' in self.scaler:
-                # Convert to device if needed
-                if isinstance(self.scaler['mean_'], torch.Tensor):
-                    self.scaler['mean_'] = self.scaler['mean_'].to(device)
-                    self.scaler['scale_'] = self.scaler['scale_'].to(device)
-                else:
-                    # Convert numpy arrays to tensors
-                    self.scaler['mean_'] = torch.tensor(self.scaler['mean_'], dtype=torch.float32, device=device)
-                    self.scaler['scale_'] = torch.tensor(self.scaler['scale_'], dtype=torch.float32, device=device)
-                print(f"Scaler expects {len(self.scaler['mean_'])} features")
-                if len(self.scaler['mean_']) != num_dofs:
-                    raise ValueError(f"Scaler expects {len(self.scaler['mean_'])} features, but VAE is configured for {num_dofs}")
-            else:
-                raise ValueError("Scaler dict must contain 'mean_' and 'scale_' keys")
-        else:
-            raise ValueError("Scaler must be a dictionary with 'mean_' and 'scale_' keys")
+        if self.scaler['mean_'].numel() != num_dofs:
+            raise ValueError(f"Scaler expects {self.scaler['mean_'].numel()} features, but VAE is configured for {num_dofs}")
 
     #Process data using scaler
     def _preprocess(self, joint_angles_subset):
@@ -160,18 +165,26 @@ class VAEModelWrapper:
 
     #Reconstruct the joint angle (without gradient), return the reconstruction error
     def reconstruct(self, joint_angles, getgrad=False):
-        ndim = len(joint_angles.shape) 
-        # Convert to tensor if numpy array
-        if getgrad:
-            joint_angles = torch.from_numpy(joint_angles).to(dtype=torch.float32).to(self.device)
-            joint_angles.requires_grad_(True)
-        else:
-            joint_angles = torch.from_numpy(joint_angles).to(dtype=torch.float32).to(self.device)
+        """Score a vector or row batch of 123/135 BioMAC state features.
 
-        if ndim == 1:
-            subset_joints = joint_angles.unsqueeze(0)  # Add batch dimension
-        else:
-            subset_joints = joint_angles
+        Return the scalar mean Gaussian NLL, or its gradient in the input shape.
+        For ambiguous model widths, state_keys specifies the training feature order.
+        """
+        joint_angles = np.asarray(joint_angles)
+        if joint_angles.ndim not in (1, 2) or joint_angles.shape[-1] not in (123, 135) or joint_angles.size == 0:
+            raise ValueError(f'Expected a nonempty vector or row batch with 123 or 135 features, got {joint_angles.shape}')
+        if not np.isfinite(joint_angles).all():
+            raise ValueError('Input features must be finite')
+        with torch.set_grad_enabled(getgrad):
+            inputs = torch.as_tensor(joint_angles.copy(), dtype=torch.float32, device=self.device)
+            inputs.requires_grad_(getgrad)
+            error = self._reconstruction_error(inputs)
+            if getgrad:
+                return torch.autograd.grad(error, inputs)[0].detach().cpu().numpy()
+            return error.detach().cpu().numpy()
+
+    def _reconstruction_error(self, joint_angles):
+        subset_joints = joint_angles.unsqueeze(0) if joint_angles.ndim == 1 else joint_angles
         
         # Accumulate the forces - 8 dim for each Fx, Fy, Fz for each foot
         if joint_angles.shape[-1] == 135:  
@@ -191,36 +204,16 @@ class VAEModelWrapper:
             subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 102:]], dim=1)
         elif joint_angles.shape[-1] == 123:
             subset_joints = torch.cat([subset_joints[:, :54], F_vec, subset_joints[:, 90:]], dim=1)
-        # Set mtp and subtalar to zero for foot joints
-        scaling = torch.ones_like(subset_joints)
-        scaling[:,[5,6,12,13]] = 0.0
-        scaling[:,[3,10]] = -1 # Knee inverted
-        scaling[:,[5+27,6+27,12+27,13+27]] = 0.0
-        scaling[:,[3+27,10+27]] = -1
-        #scaling[:, [-33+6+3, -33+6+10]] = -1 # knee moment inverted
-        #scaling[:, [-27+13, -27+6]] = 0.0 # mtp moment zeroed
-
-        subset_joints = subset_joints * scaling
-        subset_joints = subset_joints[:,self.mask]
+        subset_joints = subset_joints * self.input_scale
+        subset_joints = subset_joints[:, self.mask] if self.feature_indices is None else subset_joints[:, self.feature_indices]
         processed_angles = self._preprocess_torch(subset_joints)
 
-        x = processed_angles
-        mu_latent, logvar_latent = self.model.encode(x)
-        #z = self.model.reparameterize(mu, logvar)
+        mu_latent, _ = self.model.encode(processed_angles)
         mu_out, var_out = self.model.decode(mu_latent)
-        rec_x_np = mu_out.squeeze(0)
-        rec_var_np = var_out.squeeze(0)
-        recon_subset = self._postprocess_torch(rec_x_np)
-        var_subset = self._postprocess_torch(rec_var_np, mode="var")
-        # output = self._reconstruct_full_joints(recon_subset, original_pelvis)
-        # error = torch.mean(((subset_joints - recon_subset)*self.result_scale)**2)
-        error = torch.nn.functional.gaussian_nll_loss(recon_subset, subset_joints, var_subset, reduction='mean')
-        # error = torch.mean(((subset_joints - recon_subset))**2 / var_subset) #+ torch.log(var_subset))
-        if not getgrad:
-            return error.detach().cpu().numpy()
-        else: 
-            error.backward(retain_graph=False)
-            return joint_angles.grad.detach().cpu().numpy()
+        recon_subset = self._postprocess_torch(mu_out)
+        var_subset = self._postprocess_torch(var_out, mode="var")
+        error = torch.nn.functional.gaussian_nll_loss(recon_subset, subset_joints, var_subset.clamp_min(1e-6), reduction='mean')
+        return error
 
     #Reconstruct the joint angle (with gradient w.r.t original scale), return the gradient
     def reconstruct_withgrad(self, joint_angles):
@@ -230,8 +223,9 @@ class VAEModelWrapper:
 #Initialize a instance to get the result
 _vae_instance = None
 
-def initialize_vae(model_path, scaler_path, num_dofs=27, latent_dim=20, hidden_dim=512, device='cpu'):
+def initialize_vae(model_path, scaler_path, num_dofs=27, latent_dim=20, hidden_dim=512, device='cpu', state_keys=None):
     global _vae_instance
+    _vae_instance = None
     try:
         _vae_instance = VAEModelWrapper(
             model_path=model_path,
@@ -239,7 +233,8 @@ def initialize_vae(model_path, scaler_path, num_dofs=27, latent_dim=20, hidden_d
             num_dofs=num_dofs,
             latent_dim=latent_dim,
             hidden_dim=hidden_dim,
-            device=device
+            device=device,
+            state_keys=state_keys,
         )
         return True
     except Exception as e:
@@ -251,7 +246,7 @@ def reconstruct(joint_angles_np):
     if _vae_instance is None:
         raise RuntimeError("VAE instances is not initialized, call initialize_vae first!")
     
-    joint_angles = joint_angles_np.copy().T
+    joint_angles = np.asarray(joint_angles_np).T
     error = _vae_instance.reconstruct(joint_angles)
 
     return error
@@ -261,7 +256,7 @@ def reconstruct_withgrad(joint_angles_np):
     if _vae_instance is None:
         raise RuntimeError("VAE instances is not initialized, call initialize_vae first!")
     
-    joint_angles = joint_angles_np.copy().T
+    joint_angles = np.asarray(joint_angles_np).T
     gradient = _vae_instance.reconstruct_withgrad(joint_angles)
 
     return gradient

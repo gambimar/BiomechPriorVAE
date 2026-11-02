@@ -28,7 +28,14 @@
 %> @retval  problem        Collocation: Generated standing problem
 % ======================================================================
 function problem = running3D(model,plotlog,initialFile,resultFile,N,sym,W, targetspeed, vaeParams, metmodel)
+if isinf(W.dur)
+    error('running3D:UnsupportedDuration', 'Fixed duration requires a duration input, which this predictive-gait interface does not accept.');
+end
+if W.track ~= 0
+    error('running3D:UnsupportedTracking', 'Tracking requires tracking data, which this predictive-gait interface does not accept.');
+end
 %% VAE settings
+useVAE = false;
 if nargin >= 9 && ~isempty(vaeParams)
     useVAE = true;
 
@@ -119,30 +126,22 @@ else
     problem.addOptimVar('controls',repmat(model.controls.xmin,1,N), repmat(model.controls.xmax,1,N));
 end
 % 4. Add duration to the collocation problem 
-if isinf(W.dur)
-    if sym
-        problem.addOptimVar('dur',targetdur/2,targetdur/2);
+if sym
+    if isinf(W.speed)
+        if targetspeed > 3
+            max_dur = 0.4;
+        elseif targetspeed > 2.5
+            max_dur = 0.5;
+        else
+            max_dur = 1 / 2 / (targetspeed * 0.27 + 0.37);
+        end
+        problem.addOptimVar('dur',0.2,max_dur);
     else
-        problem.addOptimVar('dur',targetdur,targetdur);
+        max_dur = .7;
+        problem.addOptimVar('dur',0.2,max_dur);
     end
 else
-    if sym
-        if isinf(W.speed)
-            if targetspeed > 3
-                max_dur = 0.4;
-            elseif targetspeed > 2.5
-                max_dur = 0.5;
-            else
-                max_dur = 1 / 2 / (targetspeed * 0.27 + 0.37);
-            end
-            problem.addOptimVar('dur',0.2,max_dur); % for metabolic models -- bound time to 0.7 because the double-steps are then less likely to occur
-        else
-            max_dur = .7;
-            problem.addOptimVar('dur',0.2,max_dur); % for metabolic models -- bound time to 0.7 because the double-steps are then less likely to occur
-        end
-    else
-        problem.addOptimVar('dur',0.2,2);
-    end
+    problem.addOptimVar('dur',0.2,2);
 end
 
 % 5. Add speed to the collocation problem
@@ -151,7 +150,7 @@ if isinf(W.speed)
     problem.addOptimVar('speed', [targetspeed;-0.01], [targetspeed;0.01], [targetspeed;-0.007])
 else
     display("Speed is a decision variable")
-    problem.addOptimVar('speed',[0.2;-0.01],[1.8,0.01], [1;0.003]); % Do not initialize with 0 to avoid errors in effortTermMuscles.m
+    problem.addOptimVar('speed',[0.2;-0.01],[1.8;0.01], [1;0.003]); % Do not initialize with 0 to avoid errors in effortTermMuscles.m
 end
 % targetspeed_x: 4.001098 targetspeed_z: -0.007782 targetdur: 0.771250
 
@@ -191,25 +190,9 @@ if W.metcost ~= 0
     exponent_cot = "log"; % log transform instead of 
     problem.addObjective(@cotTerm, W.metcost, metmodel, epsilon, exponent_cot);
 end
-if W.track ~= 0
-    dofNames = {'pelvis_rotation'    'pelvis_obliquity'    'pelvis_tilt'  'hip_flexion_r'    'hip_adduction_r'    'hip_rotation_r'    'knee_angle_r'    'ankle_angle_r'    'subtalar_angle_r' ...
-         'mtp_angle_r'    'hip_flexion_l'    'hip_adduction_l'    'hip_rotation_l'    'knee_angle_l'    'ankle_angle_l'    'subtalar_angle_l'    'mtp_angle_l'    'lumbar_extension'    ...
-         'lumbar_bending'    'lumbar_rotation'    'arm_flex_r'    'arm_add_r'    'arm_rot_r'    'elbow_flex_r'    'pro_sup_r'    'arm_flex_l'    'arm_add_l'    'arm_rot_l'    'elbow_flex_l'    'pro_sup_l'};
-    grfNames = {'GRF_x_r', 'GRF_y_r', 'GRF_z_r', 'GRF_x_l', 'GRF_y_l', 'GRF_z_l'};
-    trackingDataAngles = trackingData.extractData('angle', dofNames);
-    trackingDataGRF    = trackingData.extractData('GRF',   grfNames);
-    wAng = 1;
-    wGRF = 5; % wGRF/wAng is the ratio of the weighting between GRFs and angles
-    NAng = trackingDataAngles.nVariables;
-    NGRF = trackingDataGRF.nVariables;
-    wAngFac = wAng * NAng / (wGRF*NGRF + wAng*NAng); % We do a weighted mean and we have to compensate for 1/NAng which is done in the objctive
-    wGRFFac = wGRF * NGRF / (wGRF*NGRF + wAng*NAng); % We do a weighted mean and we have to compensate for 1/NGRF which is done in the objctive
-    problem.addObjective(@trackAngles,W.track*wAngFac,trackingDataAngles);
-    problem.addObjective(@trackGRF,W.track*wGRFFac,trackingDataGRF);
-end
 
 % VAE objective
-if vaeParams.weight ~= 0
+if useVAE && vaeParams.weight ~= 0
     try
         problem.addObjective(@vaeReconstructionTerm, vaeParams.weight, vaeParams);
         fprintf('Successfully added VAE objective!\n')

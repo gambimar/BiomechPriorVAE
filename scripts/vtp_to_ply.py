@@ -1,30 +1,30 @@
-import vtk
-import os
-import glob
+"""Convert OpenSim VTP geometry to the adjacent ``*.vtp.ply`` files."""
 
-def convert_vtp_to_ply(geometry_path):
-    vtp_files = glob.glob(os.path.join(geometry_path, "*.vtp"))
-    
-    for vtp_file in vtp_files:
-        ply_file = vtp_file + ".ply"
-        
-        if os.path.exists(ply_file):
+import argparse
+from pathlib import Path
+
+
+def convert_vtp_to_ply(geometry_path: str | Path) -> None:
+    """Convert each VTP file, preserving existing PLY files."""
+    import vtk
+
+    for vtp_file in Path(geometry_path).glob("*.vtp"):
+        ply_file = vtp_file.with_suffix(".vtp.ply")
+        if ply_file.exists():
             continue
-        
-        print(f"Converting {os.path.basename(vtp_file)} to PLY...")
-        
-        # 读取 VTP 文件
+        print(f"Converting {vtp_file.name} to PLY...")
         reader = vtk.vtkXMLPolyDataReader()
-        reader.SetFileName(vtp_file)
+        reader.SetFileName(str(vtp_file))
         reader.Update()
-        
-        # 写入 PLY 文件
         writer = vtk.vtkPLYWriter()
-        writer.SetFileName(ply_file)
+        writer.SetFileName(str(ply_file))
         writer.SetInputConnection(reader.GetOutputPort())
-        writer.Write()
-        
-        print(f"Created: {os.path.basename(ply_file)}")
+        if writer.Write() != 1:
+            raise OSError(f"Failed to write {ply_file}")
+        print(f"Created: {ply_file.name}")
 
-geometry_path = "/home/kishgard/projects/BiomechPriorVAE/data/model/Geometry"
-convert_vtp_to_ply(geometry_path)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("geometry_path", type=Path)
+    convert_vtp_to_ply(parser.parse_args().geometry_path)

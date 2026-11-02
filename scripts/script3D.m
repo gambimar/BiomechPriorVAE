@@ -145,7 +145,7 @@ sym = 1; % do not simulate symmetric movement
 W.effMuscles = 0; % Weight of effort term in objective 1000
 W.effMusclesAct = 1e3; % According to Nitschke, 2019
 W.effMusclesTor = 1; %1.0e3 / 10;
-W.cot = 0; % 5.0e2 / 92 / 74.9646;
+W.metcost = 0; % 5.0e2 / 92 / 74.9646;
 W.effTorques = 0;    % Weight of torque term in objective
 W.reg        = 0; % Weight of regularization term in objective
 W.track      = 0;    % Weight of tracking term in objective
@@ -169,7 +169,7 @@ if useVAE
     % => Have a look into it ;)
     problemRunning = running3D(model,1,initialGuess,resultFileRunning,N,sym,W, targetspeed, straightRunningVAE);
 else
-    problemRunning = running3D(model,trackingData,initialGuess,resultFileRunning,N,sym,W, targetspeed_x, targetspeed_z, targetdur);
+    problemRunning = running3D(model,1,initialGuess,resultFileRunning,N,sym,W,targetspeed,[]);
 end
 
 %problemRunning.derivativetest

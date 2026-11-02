@@ -3,7 +3,6 @@ import numpy as np
 import time
 from scipy.io import loadmat
 import os
-import threading
 
 class PoseVisualizer:
     def __init__(self):
@@ -80,7 +79,7 @@ class PoseVisualizer:
         try:
             while True:
                 self.gui.nativeAPI().renderSkeleton(self.skeleton)
-                time.sleep
+                time.sleep(0.01)
         except KeyboardInterrupt:
             print("Visualization stopped")
 
@@ -125,8 +124,6 @@ def mat_visualize(mat_path):
                 standing_path = os.path.join(mat_path, filename)
             elif filename.startswith('runningJoints'):
                 running_path = os.path.join(mat_path, filename)
-            elif filename.startswith('curvedRunningJoints'):
-                curvedrunning_path = os.path.join(mat_path, filename)
 
     standing_mat = loadmat(standing_path)
     standingJoints = standing_mat['standingJoints'] #(33, 1)
@@ -134,10 +131,6 @@ def mat_visualize(mat_path):
     standingJoints_fix = standingJoints.copy()
     standingJoints_fix[[9, 16], :] = -standingJoints_fix[[9, 16], :]
 
-    # curvedrunning_mat = loadmat(curvedrunning_path)
-    # curvedRunningJoints = curvedrunning_mat['curvedRunningJoints'] #(33, 50)
-    # curvedRunningJoints_fix = curvedRunningJoints.copy()
-    # curvedRunningJoints_fix[[9, 16], :] = -curvedRunningJoints_fix[[9, 16], :]
 
     running_mat = loadmat(running_path)
     runningJoints = running_mat['runningJoints'] #(33, 50)
@@ -148,7 +141,6 @@ def mat_visualize(mat_path):
     visualizer = PoseVisualizer()
     visualizer.visualize_pose(joint_position=standingJoints_fix, port=8080)
     visualizer.animate_poses(joint_positions=runningJoints_fix, port=8081)
-    # visualizer.animate_poses(joint_positions=curvedRunningJoints_fix, port=8082)
     
 
 if __name__ == "__main__":

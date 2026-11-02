@@ -33,6 +33,11 @@ class B3DConverter:
         num_frames=None
     ):
         
+        trial_length = subject.getTrialLength(trial_idx)
+        if start_frame < 0 or start_frame > trial_length:
+            raise ValueError("start_frame must be within the trial")
+        if num_frames is None:
+            num_frames = trial_length - start_frame
         if num_frames <= 0:
             return np.array([])
         
@@ -83,7 +88,7 @@ class B3DConverter:
         else:
             joint_pos_array = np.array([])
 
-        print(f"Converting complete!")
+        print("Converting complete!")
         print(f"Total frame: {len(joint_pos_array)}")
         print(f"DOF num: {len(joint_pos_array[0]) if len(joint_pos_array) > 0 else 0}")
         
@@ -181,7 +186,7 @@ class Gait3dB3DConverter:
         print(f"Target DOF number: {len(self.target_dof_names)}")
         print(f"Successfully mapped DOF number: {len(self.target_dof_indices)}")
         if missing_dofs:
-            print(f"Missing DOFs: {missing_dofs}")
+            raise ValueError(f"Cannot convert to 33 DOFs; missing DOFs: {missing_dofs}")
 
 
     def convert_single_trial(
@@ -193,6 +198,11 @@ class Gait3dB3DConverter:
         num_frames=None
     ):
         
+        trial_length = subject.getTrialLength(trial_idx)
+        if start_frame < 0 or start_frame > trial_length:
+            raise ValueError("start_frame must be within the trial")
+        if num_frames is None:
+            num_frames = trial_length - start_frame
         if num_frames <= 0:
             return np.array([])
         
@@ -244,7 +254,7 @@ class Gait3dB3DConverter:
         else:
             joint_pos_array = np.array([])
 
-        print(f"Converting complete!")
+        print("Converting complete!")
         print(f"Total frame: {len(joint_pos_array)}")
         print(f"DOF num: {len(joint_pos_array[0]) if len(joint_pos_array) > 0 else 0}")
         
@@ -280,4 +290,3 @@ if __name__ == "__main__":
     converter.save_data(
         joint_pos, output_file
     )
-    

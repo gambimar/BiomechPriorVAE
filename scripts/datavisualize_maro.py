@@ -4,7 +4,6 @@ import time
 from scipy.io import loadmat
 from scipy.spatial.transform import Rotation
 import os
-import threading
 
 class PoseVisualizer:
     def __init__(self, repo_path):

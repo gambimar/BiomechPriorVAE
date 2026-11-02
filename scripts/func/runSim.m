@@ -59,7 +59,7 @@ if useVAE
     vaeParams.latentDim = latent_size;
     vaeParams.hiddenDim = 512;
     vaeParams.device = 'cpu';
-    if metmodel == 0
+    if isequal(metmodel, 0) || strcmp(string(metmodel), "0")
         vaeParams.weight = 3;
     elseif contains(modelFile, 'trendelenburg')
         vaeParams.weight = 1;
@@ -95,19 +95,7 @@ end
 % Create an instane of our 3D model class using the default settings
 % check contact-model variants before the generic 'smoothsphere' catch-all,
 % since their names also contain the substring 'smoothsphere'
-if contains(modelFile, 'smoothsphere_softdamp2')
-    model = Gait3d_smoothsphere_softdamp2(modelFile);
-elseif contains(modelFile, 'smoothsphere_softdamp4')
-    model = Gait3d_smoothsphere_softdamp4(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer2')
-    model = Gait3d_smoothsphere_stiffer2(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer4')
-    model = Gait3d_smoothsphere_stiffer4(modelFile);
-elseif contains(modelFile, 'smoothsphere')
-    model = Gait3d_smoothsphere(modelFile);
-else
-    model = Gait3d(modelFile);
-end
+model = createGaitModel(modelFile);
 % => We use a mex function for some functionality of the model. This was
 % automatically initialized with the correct settings for the current
 % model. (see command line output)
@@ -156,7 +144,7 @@ end
 N = 50; % number of collocation nodes
 sym = 1; % do not simulate symmetric movement
 W.effMuscles = 0; % Weight of effort term in objective 1000
-if metmodel == 0
+if isequal(metmodel, 0) || strcmp(string(metmodel), "0")
     W.effMusclesAct = 1e3; % According to Nitschke, 2019
     W.effMusclesTor = 1; %1.0e3 / 10;
     W.metcost = 0; % 5.0e2 / 92 / 74.9646;
@@ -189,26 +177,7 @@ initialGuess = resultFileStanding;
 % check if model name contains "smoothspheres"
 % check contact-model variants before the generic 'smoothsphere' catch-all,
 % since their names also contain the substring 'smoothsphere'
-if contains(modelFile, 'smoothsphere_softdamp2')
-    model = Gait3d_smoothsphere_softdamp2(modelFile);
-elseif contains(modelFile, 'smoothsphere_softdamp4')
-    model = Gait3d_smoothsphere_softdamp4(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer2')
-    model = Gait3d_smoothsphere_stiffer2(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiffer4')
-    model = Gait3d_smoothsphere_stiffer4(modelFile);
-elseif contains(modelFile, 'smoothsphere_nodamp')
-    model = Gait3d_smoothsphere_nodamp(modelFile);
-elseif contains(modelFile, 'smoothsphere_stiff10x')
-    model = Gait3d_smoothsphere_stiff10x(modelFile);
-elseif contains(modelFile, 'smoothsphere')
-    model = Gait3d_smoothsphere(modelFile);
-    if contains(modelFile, 'trendelenburg')
-        model = Gait3d_smoothsphere(modelFile);
-    end
-else
-    model = Gait3d(modelFile);
-end
+model = createGaitModel(modelFile);
 % Call IntroductionExamples.running3D() to specify the optimizaton problem
 % => Take a look inside the function ;)
 if useVAE
@@ -217,7 +186,7 @@ if useVAE
     % => Have a look into it ;)
     problemRunning = running3D(model,1,initialGuess,resultFileRunning,N,sym,W, targetspeed, straightRunningVAE,metmodel);
 else
-    problemRunning = running3D(model,trackingData,initialGuess,resultFileRunning,N,sym,W, targetspeed_x, targetspeed_z, targetdur);
+    problemRunning = running3D(model,1,initialGuess,resultFileRunning,N,sym,W,targetspeed,[],metmodel);
 end
 
 %problemRunning.derivativetest

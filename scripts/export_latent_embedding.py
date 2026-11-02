@@ -6,21 +6,18 @@ plot/figure00.py's published architecture, and writes plain JSON instead of a
 matplotlib figure. Does not modify any existing file in the repo.
 """
 import json
-import os
+from pathlib import Path
 import sys
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from sklearn.manifold import TSNE
 from tqdm import tqdm
 
-while not os.path.exists('.git'):
-    os.chdir('..')
-sys.path.insert(0, os.getcwd())
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
-from src.data.addBiomechanicsDataset import AddBiomechanicsDataset, trial_id_mapping
-from src.vaemodel import VAEModelWrapper
+from scripts.export_utils import parse_export_args, embed_latents
 
 NUM_DOFS = 50
 LATENT_DIM = 24
@@ -28,51 +25,66 @@ STATE_KEYS = ["pos", "vel", "force"]
 MAX_BATCHES = 300
 BATCH_SIZE = 32
 
-dataset = AddBiomechanicsDataset(
-    "/home/public/data/AddBiomechanicsDataset/train/With_Arm/",
-    1,
-    '',
-    testing_with_short_dataset=False,
-)
-dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+@torch.inference_mode()
+def main() -> None:
+    """Export samples using paths relative to the repository."""
+    args = parse_export_args(__doc__)
+    torch.manual_seed(0)
+    from src.data.addBiomechanicsDataset import AddBiomechanicsDataset, trial_id_mapping
+    from src.vaemodel import VAEModelWrapper
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-vae_model = VAEModelWrapper(
-    f"result/model/BiomechPriorVAE_best_{NUM_DOFS}.pth",
-    f"result/model/scaler_{NUM_DOFS}.pkl",
-    num_dofs=NUM_DOFS,
-    latent_dim=LATENT_DIM,
-    device=device,
-)
+    dataset = AddBiomechanicsDataset(
+        args.data_path,
+        1,
+        '',
+        testing_with_short_dataset=False,
+        skip_loading_skeletons=True,
+    )
+    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=args.num_workers)
 
-mu_list, label_list = [], []
-for batch_idx, (data, label_, seq_len, _) in enumerate(tqdm(dataloader)):
-    data_cat = torch.concat([data[key] for key in STATE_KEYS], dim=-1).to(device)
-    data_pre = vae_model._preprocess_torch(data_cat)
-    mu_, _ = vae_model.model.encode(data_pre)
-    mu_list.append(mu_.detach().cpu())
-    label_list.append(label_['trialname'].detach().cpu())
-    if batch_idx >= MAX_BATCHES:
-        break
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    vae_model = VAEModelWrapper(
+        REPO_ROOT / f"result/model/BiomechPriorVAE_best_{NUM_DOFS}.pth",
+        REPO_ROOT / f"result/model/scaler_{NUM_DOFS}.pkl",
+        num_dofs=NUM_DOFS,
+        latent_dim=LATENT_DIM,
+        device=device,
+    )
 
-z = np.array(torch.concat(mu_list, dim=0)).squeeze()
-labels_lin = np.array(torch.concat(label_list, dim=0)).astype(int).squeeze()
+    mu_list, label_list = [], []
+    for batch_idx, (data, label_, seq_len, _) in enumerate(tqdm(dataloader)):
+        if batch_idx >= MAX_BATCHES:
+            break
+        data_cat = torch.concat([data[key] for key in STATE_KEYS], dim=-1).to(device)
+        data_pre = vae_model._preprocess_torch(data_cat)
+        mu_, _ = vae_model.model.encode(data_pre)
+        mu_list.append(mu_.detach().cpu())
+        label_list.append(label_['trialname'].detach().cpu())
 
-inv_map = {v: k for k, v in trial_id_mapping.items()}
-label_names = [inv_map[int(i)] for i in labels_lin]
+    if not mu_list:
+        raise ValueError('No valid dataset frames were available for export')
+    z = torch.cat(mu_list, dim=0).numpy().reshape(-1, LATENT_DIM)
+    labels_lin = torch.cat(label_list, dim=0).numpy().astype(int).reshape(-1)
 
-print(f"Embedding {z.shape[0]} points, latent dim {z.shape[1]}")
-print("Label counts:", {k: int((np.array(label_names) == k).sum()) for k in trial_id_mapping})
+    inv_map = {v: k for k, v in trial_id_mapping.items()}
+    label_names = [inv_map[int(i)] for i in labels_lin]
 
-reducer = TSNE(n_components=2, init='pca', random_state=0, perplexity=30)
-z2 = reducer.fit_transform(z)
+    print(f"Embedding {z.shape[0]} points, latent dim {z.shape[1]}")
+    print("Label counts:", {k: int((np.array(label_names) == k).sum()) for k in trial_id_mapping})
 
-points = [
-    {"x": float(z2[i, 0]), "y": float(z2[i, 1]), "label": label_names[i]}
-    for i in range(z2.shape[0])
-]
+    z2 = embed_latents(z)
 
-out_path = "result/latent_embedding_export.json"
-with open(out_path, "w") as f:
-    json.dump(points, f)
-print(f"Wrote {len(points)} points to {out_path}")
+    points = [
+        {"x": float(z2[i, 0]), "y": float(z2[i, 1]), "label": label_names[i]}
+        for i in range(z2.shape[0])
+    ]
+
+    out_path = REPO_ROOT / "result/latent_embedding_export.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(points, f)
+    print(f"Wrote {len(points)} points to {out_path}")
+
+
+if __name__ == "__main__":
+    main()

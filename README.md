@@ -17,7 +17,7 @@ Dependencies are managed with [uv](https://docs.astral.sh/uv/) (`pyproject.toml`
 cd BiomechPriorVAE
 uv sync            # creates .venv/ with Python 3.12, torch, nimblephysics, ...
 ```
-MATLAB starts this interpreter out-of-process: `vaeReconstructionTerm.m` hard-codes `.../BiomechPriorVAE/.venv/bin/python3.12`. Adapt that path if your checkout is elsewhere, or if using different Python versions. MATLAB is quite restrictive when it comes to Python versions, so the easiest way is to use the same versions as we did (MATLAB R2024b, Python 3.12).
+MATLAB starts this interpreter out-of-process. The reference `vaeReconstructionTerm.m` finds `.venv/bin/python` (Linux/macOS) or `.venv/Scripts/python.exe` (Windows) relative to the checkout. Set `vaeParams.pythonExecutable` to use another interpreter. Use a Python version supported by your MATLAB release; the original environment was MATLAB R2024b and Python 3.12. The full dataset workflow needs a platform supported by nimblephysics; pure PyTorch inference and the regression tests do not import Nimble.
 
 ### 2. BioMAC-Sim-Toolbox
 The simulations use the `opensimContactModel` branch of the [BioMAC-Sim-Toolbox](https://github.com/mad-lab-fau/BioMAC-Sim-Toolbox), which provides the smooth-sphere contact model (`Gait3d_smoothsphere`) and a logarithmic `cotTerm` with selectable metabolic models.
@@ -49,7 +49,7 @@ uv run python -m src.vaetrainer --addbiomechanics_path /path/to/AddBiomechanicsD
 The state space is selected in the `__main__` block via `model = ...`. The default, `"q_qdot"`, trains a 46-dimensional prior; set `model = "q_dot_F"` to train the 50-dimensional one used in the simulations. The weights and scaler are written to `result/model/BiomechPriorVAE_best_<n>.pth` and `result/model/scaler_<n>.pkl`, where `<n>` is the input dimension, which are the file names `runSim.m` looks up via `nDimVae`. The latent size is fixed to 24 in the `train_model(...)` call.
 
 ### 6. MATLAB paths
-`runGaitSingleStep.m` adds the repository (including the nested toolbox) and `mexIPOPT` with `addpath(genpath(...))`, using hard-coded absolute paths. Adapt them, together with `base_result_path`, before running simulations.
+`runGaitSingleStep.m` adds the checkout (including the nested toolbox) and the sibling `mexIPOPT` directory. Results go to `result/simulations/` relative to the checkout.
 
 ## Overview
 The project focuses on generate more reasonable human gait simulations by incorporating a learned state prior (VAE) into the optimal control problem. 
@@ -70,11 +70,13 @@ Contains the main python scripts for data convertion and model training, as well
 ### 3. utility
 - **`vaeReconstructionTerm.m`** (repo root) - The reconstruction objective for the BioMAC-Sim-Toolbox, which calls the VAE model (`src/vaemodel.py`) through MATLAB's Python interface to compute the reconstruction error and its gradient. This function is here for reference, the actual implementation used in the simulations is copied to the toolbox's `Collocation` class. 
 
+To use the bridge corrections in this checkout, update the toolbox's `@Collocation/vaeReconstructionTerm.m` from this reference copy and keep `vaeFeatureLayout.m`, `vaeStateIndices.m`, `vaeJointMoments.m` and `vaeStateGradient.m` on the MATLAB path. The bridge reads contact names instead of fixed state indices and skips joint-moment evaluations for the published 50-feature prior. Optional `vaeParams.stateKeys` forwards explicit feature groups to Python, for example `{'pos', 'tau'}` for a newly trained 46-feature position/moment prior.
+
 ## Running gait simulations (`runGait` interface)
 Batches of predictive gait simulations are started from the shell with **`runGait.sh`** (repo root). For each speed in the requested range it repeatedly calls MATLAB (`scripts/func/runGaitSingleStep.m` → `scripts/func/runSim.m`) until **10 converged solutions** exist for that speed.
 
 ### Usage
-Run from the repository root (the script adds `scripts/func` via a relative path):
+The script resolves the repository root automatically:
 ```bash
 ./runGait.sh --model=<model.osim> [--metmodel=<name|0>] [--min=SPEED] [--max=SPEED]
 ```
@@ -89,7 +91,7 @@ Run from the repository root (the script adds `scripts/func` via a relative path
 Only speeds on a fixed grid are run; `--min`/`--max` select the grid points inside the range:
 - `0.00` – free speed (speed is an optimisation variable bounded to 0.2–1.8 m/s)
 - `0.73` – `3.53` in steps of 0.1
-- `3.73` – `5.63` in steps of 0.2
+- `3.73` – `5.53` in steps of 0.2
 - `6.00`, `7.00`
 
 ### Examples
@@ -122,7 +124,7 @@ where `<prefix>` is the model name without `.osim`, plus `_<metmodel>` if one is
 
 ### How it works / resuming
 - Each MATLAB call runs **one** simulation (the next missing `<iter>`) and exits, so MATLAB (and the Python VAE process) is restarted between runs to free memory.
-- Exit code protocol of `runGaitSingleStep`: `0` = one simulation done, call again; `1` = 10 converged runs reached for this speed, move on to the next speed; anything else = error, the script aborts.
+- `runGaitSingleStep` returns `0` after one simulation and `1` once 10 runs have converged. The shell maps completion to exit code `10`; exit code `1` remains a MATLAB failure and aborts the batch.
 - Existing result files are skipped, so an interrupted batch can be restarted with the same command and continues where it stopped.
 
 ### (Deprectated) Variants
@@ -131,9 +133,17 @@ where `<prefix>` is the model name without `.osim`, plus `_<metmodel>` if one is
 - **`scripts/runGait.m`** – old MATLAB-only batch script (all sections disabled with `break`).
 
 ### Before running
-- `runGaitSingleStep.m` contains hard-coded absolute paths (repository, `mexIPOPT`, result folder); adapt them to your machine.
+- Keep `mexIPOPT` beside this checkout and the BioMAC toolbox inside it, or add your own installation paths before calling the MATLAB functions.
 - `matlab` must be on your `PATH`, and the Python environment used by MATLAB's `pyenv` must be able to import the VAE (see `src/vaemodel.py`).
 
 ## Further analysis of the results
 
 All further analysis code has been moved to the [BiomechPriorVAE-analysis](https://github.com/gambimar/BiomechPriorVAE-visuals) repository. It contains scripts to generate the figures in the preprint, as well as additional visualizations and analyses of the simulation results.
+
+## Verification
+
+Run `python -m pytest -q` from the repository root. The suite checks synthetic training/data cases, the published checkpoint on CPU, finite-difference input gradients, import-safe utilities and a mocked MATLAB batch runner. It requires torch, numpy, scikit-learn, matplotlib, pandas, tqdm and pytest; it does not require Nimble or MATLAB. Run the MATLAB fixtures separately with `runtests('tests/matlab')` in MATLAB. They use stubs and do not replace an end-to-end BioMAC/IPOPT simulation.
+
+The inference wrapper accepts a 123- or 135-feature BioMAC state vector, or a row batch of those vectors. The MATLAB module functions accept the transposed matrix. `num_dofs` describes the selected network features, not the raw state input width. Pass `state_keys` explicitly for ambiguous feature counts, for example `state_keys=('pos', 'force')` for a newly trained 27-feature prior or `('pos', 'tau')` for a 46-feature prior. Without explicit keys, the historical 27-feature joint layout remains supported and 46 means positions plus velocities.
+
+Corrected scaler statistics and latent-axis KL reduction change future training results. Keep the published weights paired with their original scaler; regenerate both together when retraining. See [the code review](docs/code-review.md) for the findings, remaining scientific validation and performance measurement.

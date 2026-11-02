@@ -1,9 +1,12 @@
-import nimblephysics as nimble
+from __future__ import annotations
+
 import torch
 from torch.utils.data import Dataset
-from typing import List, Dict, Tuple
+from typing import TYPE_CHECKING, List, Dict, Tuple
 import os
-import random
+
+if TYPE_CHECKING:
+    import nimblephysics as nimble
 
 class InputDataKeys:
     # These are the joint quantities for the joints that we are observing
@@ -53,6 +56,36 @@ trial_id_mapping = {
 }
 
 
+def classify_trial(trialname: str) -> str:
+    """Map an AddBiomechanics trial name to the training activity labels."""
+    name = trialname.lower()
+    for token, label in (('walk', 'walk'), ('run', 'run'), ('static', 'static'),
+                         ('gait', 'gait_any'), ('stair', 'stair')):
+        if token in name:
+            return label
+    if name.startswith('t'):
+        return 'no_name'
+    if 'sts' in name:
+        return 'sit to stand'
+    return 'other'
+
+
+def ground_force_features(force: torch.Tensor, body_names: List[str], mass_kg: float) -> torch.Tensor:
+    """Return right/left vertical and horizontal forces in body-weight units."""
+    foot_names = {'calcn', 'talus', 'toes', 'toe', 'heel', 'foot'}
+    sides = [[index for index, name in enumerate(body_names)
+              if name.endswith(suffix) and name[:-2].lower() in foot_names]
+             for suffix in ('_r', '_l')]
+    if any(not indices for indices in sides):
+        raise ValueError('Ground-force body names must identify both _r and _l feet')
+    if force.shape[-1] != 3 * len(body_names) or mass_kg <= 0:
+        raise ValueError('Ground-force dimensions and subject mass must match the metadata')
+    force = force.reshape(*force.shape[:-1], len(body_names), 3) / (mass_kg * 9.81)
+    right, left = [force[..., indices, :].sum(dim=-2) for indices in sides]
+    return torch.stack((right[..., 1], torch.linalg.vector_norm(right[..., [0, 2]], dim=-1),
+                        left[..., 1], torch.linalg.vector_norm(left[..., [0, 2]], dim=-1)), dim=-1)
+
+
 class AddBiomechanicsDataset(Dataset):
     stride: int
     data_path: str
@@ -81,7 +114,12 @@ class AddBiomechanicsDataset(Dataset):
                  stride: int = 1,
                  output_data_format: str = 'last_frame',
                  skip_loading_skeletons: bool = False):
+        import nimblephysics as nimble
+
+        if window_size < 1 or stride < 1:
+            raise ValueError('window_size and stride must be positive')
         self.stride = stride
+        self.num_frames = len(range(0, window_size, stride))
         self.output_data_format = output_data_format
         self.subject_paths = []
         self.subjects = []
@@ -100,33 +138,19 @@ class AddBiomechanicsDataset(Dataset):
                     if file.endswith(".b3d") and "vanasdder" not in file.lower():
                         self.subject_paths.append(os.path.join(root, file))
         else:
-            assert data_path.endswith(".b3d")
-            self.subject_paths.append(data_path)
+            if not os.path.isfile(data_path):
+                raise FileNotFoundError(f'Dataset path not found: {data_path}')
+            if not str(data_path).endswith('.b3d'):
+                raise ValueError('Expected a dataset directory or .b3d file')
+            self.subject_paths.append(str(data_path))
+
+        self.subject_paths.sort()
 
         if testing_with_short_dataset:
             self.subject_paths = self.subject_paths[11:12]
         self.subject_indices = {subject_path: i for i, subject_path in enumerate(self.subject_paths)}
 
-        # Walk the folder path, and check for any with the ".b3d" extension (indicating that they are
-        # AddBiomechanics binary data files)
-        if len(self.subject_paths) > 0:
-            # Create a subject object for each file. This will load just the header from this file, and keep that
-            # around in memory
-            subject = nimble.biomechanics.SubjectOnDisk(
-                self.subject_paths[0])
-            # Get the number of degrees of freedom for this subject
-            self.num_dofs = subject.getNumDofs()
-            # Get the number of joints for this subject
-            self.num_joints = subject.getNumJoints()
-            # Get the contact bodies for this subject, and put them into a consistent order for the dataset
-            contact_bodies = subject.getGroundForceBodies()
-            for body in contact_bodies:
-                if body == 'pelvis':
-                    continue
-                if body not in self.contact_bodies:
-                    self.contact_bodies.append(body)
-
-
+        dof_names = None
         for i, subject_path in enumerate(self.subject_paths):
             # Check if the file size is > 10kB
             file_size = os.path.getsize(subject_path)
@@ -139,6 +163,10 @@ class AddBiomechanicsDataset(Dataset):
                 continue
             # Add the skeleton to the list of skeletons
             subject = nimble.biomechanics.SubjectOnDisk(subject_path)
+            if dof_names is None:
+                self.num_dofs = subject.getNumDofs()
+                self.num_joints = subject.getNumJoints()
+                self.contact_bodies = [body for body in subject.getGroundForceBodies() if body != 'pelvis']
             if not skip_loading_skeletons:
                 print('Loading skeleton ' + str(i + 1) + '/' + str(
                     len(self.subject_paths)) + f' for subject {subject_path}')
@@ -159,21 +187,24 @@ class AddBiomechanicsDataset(Dataset):
                         probably_missing: List[bool] = [reason != nimble.biomechanics.MissingGRFReason.notMissingGRF for reason
                                                         in subject.getMissingGRF(trial_index)]
                     except Exception as e:
-                        print(f"Warning: Error accessing trial {trial_index} in subject {subject_path}: {e}")
-                        continue
-                    for window_start in range(max(trial_length - self.window_size - 1, 0)):
+                        raise RuntimeError(f'Error accessing trial {trial_index} in subject {subject_path}') from e
+                    if len(probably_missing) != trial_length:
+                        raise ValueError(f'Missing-GRF flags do not match trial length: {subject_path}, trial {trial_index}')
+                    for window_start in range(max(trial_length - self.window_size + 1, 0)):
                         if not any(probably_missing[window_start:window_start + self.window_size:self.stride]):
-                            assert window_start + self.window_size < trial_length
                             self.windows.append((i, trial_index, window_start))
 
             if subject is not None:
                 skel = subject.readSkel(0,'')
                 # Validate correct DOF names across all subjects
-                if i > 0 and 'dof_names' in locals():
+                if dof_names is not None:
                     if [skel.getDofByIndex(j).getName() for j in range(skel.getNumDofs())] != dof_names:
                         raise ValueError(f"Subject {subject_path} has different DOF names than the first subject")
-                if 'dof_names' not in locals():
+                if dof_names is None:
                     dof_names = [skel.getDofByIndex(j).getName() for j in range(skel.getNumDofs())]
+
+        if dof_names is None:
+            raise ValueError(f'No usable .b3d subjects found in {data_path}')
         
         # Build a mapping from target DOF names to indices in the dataset DOF ordering
         self.target_dof_indices = []
@@ -182,7 +213,8 @@ class AddBiomechanicsDataset(Dataset):
                 original_index = dof_names.index(target_dof)
                 self.target_dof_indices.append(original_index)
             except ValueError:
-                print(f"Warning: DOF '{target_dof}' not found in dataset DOF names")
+                raise ValueError(f"Required DOF '{target_dof}' not found in dataset DOF names") from None
+        self.ankle_dof_indices = [dof_names.index(name) for name in ('ankle_angle_r', 'ankle_angle_l')]
         print(f"Target DOF indices: {self.target_dof_indices}")
         print(f"Dataset initialized with {len(self.subjects)} subjects")
 
@@ -194,35 +226,23 @@ class AddBiomechanicsDataset(Dataset):
 
         # Read the frames from disk
         if subject_index >= len(self.subjects) or self.subjects[subject_index] is None:
-            input_dict = {
-                'pos': torch.zeros((self.window_size // self.stride, len(self.target_dof_indices)), dtype=self.dtype),
-                'vel': torch.zeros((self.window_size // self.stride, len(self.target_dof_indices)), dtype=self.dtype),
-            }
-            return input_dict, {}, subject_index, trial
+            raise RuntimeError(f'Subject unavailable for dataset window {index}: {subject_index}')
         subject = self.subjects[subject_index]
         
         # Validate trial index before reading frames
         if trial >= subject.getNumTrials():
-            input_dict = {
-                'pos': torch.zeros((self.window_size // self.stride, len(self.target_dof_indices)), dtype=self.dtype),
-                'vel': torch.zeros((self.window_size // self.stride, len(self.target_dof_indices)), dtype=self.dtype),
-            }
-            return input_dict, {}, subject_index, trial
+            raise RuntimeError(f'Trial unavailable for dataset window {index}: {trial}')
         
         frames: nimble.biomechanics.FrameList = subject.readFrames(trial,
                                                                    window_start,
-                                                                   self.window_size // self.stride,
+                                                                   self.num_frames,
                                                                    stride=self.stride,
                                                                    includeSensorData=False,
                                                                    includeProcessingPasses=True)
 
         # Feed a different frame to the model
-        if not (len(frames) == self.window_size // self.stride):
-            input_dict = {
-                'pos': torch.zeros((self.window_size // self.stride, len(self.target_dof_indices)), dtype=self.dtype),
-                'vel': torch.zeros((self.window_size // self.stride, len(self.target_dof_indices)), dtype=self.dtype),
-            }
-            return input_dict, {}, subject_index, trial
+        if len(frames) != self.num_frames:
+            raise RuntimeError(f'Expected {self.num_frames} frames for dataset window {index}, got {len(frames)}')
         #f"Expected {self.window_size // self.stride} frames, got {len(frames)}, index {index}, subject {subject_index}, trial {trial}, window_start {window_start}"
 
 
@@ -243,36 +263,19 @@ class AddBiomechanicsDataset(Dataset):
             force = torch.row_stack([
                 torch.tensor(p.groundContactForce, dtype=self.dtype).detach() for p in first_passes
             ])
-            f = force / subject.getMassKg() / 9.81 # Normalize by body weight
-            f = torch.tensor([[f[:,1], torch.sqrt(f[:,0]**2 + f[:,2]**2), f[:,4], torch.sqrt(f[:,3]**2 + f[:,5]**2)]], dtype=self.dtype)
-            input_dict[InputDataKeys.FORCE] = f
+            input_dict[InputDataKeys.FORCE] = ground_force_features(
+                force, subject.getGroundForceBodies(), subject.getMassKg())
 
             input_dict[InputDataKeys.M] = torch.row_stack([
                 torch.tensor(p.tau, dtype=self.dtype).detach()[self.target_dof_indices] for p in first_passes
             ]) / subject.getMassKg() / 9.81 / subject.getHeightM()  # Normalize by body weight and height
               # Zero out pelvis torques
             input_dict["M_ankle"] = torch.row_stack([
-                torch.tensor(p.tau, dtype=self.dtype).detach()[[10,17]] for p in first_passes
+                torch.tensor(p.tau, dtype=self.dtype).detach()[self.ankle_dof_indices] for p in first_passes
             ]) / subject.getMassKg() / 9.81 / subject.getHeightM()  # Normalize by body weight and height
 
         if get_label:
-            trialname = subject.getTrialName(trial)
-            if trialname.lower().find('walk') != -1:
-                trialname = 'walk'
-            elif trialname.lower().find('run') != -1:
-                trialname = 'run'
-            elif trialname.lower().find('static') != -1:
-                trialname = 'static'
-            elif trialname.lower().find('gait') != -1:
-                trialname = 'gait_any'
-            elif trialname.lower().find('stair') != -1:
-                trialname = 'stair'
-            elif trialname.lower().startswith('t'):
-                trialname = 'no_name'
-            elif trialname.lower().find('sts') != -1:
-                trialname = 'sit to stand'
-            else:
-                trialname = 'other'
+            trialname = classify_trial(subject.getTrialName(trial))
             trial_id = trial_id_mapping[trialname]
             label_dict[OutputDataKeys.trialname] = torch.tensor(trial_id, dtype=torch.long)
             #
@@ -308,9 +311,13 @@ class AddBiomechanicsDataset(Dataset):
         return state
 
     def __setstate__(self, state):
+        import nimblephysics as nimble
+
         # Restore instance attributes.
         self.__dict__.update(state)
         self.subjects = []
+        self.skeletons = []
+        self.skeletons_contact_bodies = []
         print('Unpickling AddBiomechanicsDataset copy in reader worker thread')
         # Create the non picklable SubjectOnDisk objects. Skip loading the skeletons and contact bodies, since these
         # are not used in the reader worker threads.
@@ -324,5 +331,4 @@ class AddBiomechanicsDataset(Dataset):
                     continue
                 self.subjects.append(nimble.biomechanics.SubjectOnDisk(subject_path))
             except Exception as e:
-                print(f"Warning: Failed to load subject {subject_path} in worker: {e}")
-                self.subjects.append(None)  # Placeholder to maintain indexing
+                raise RuntimeError(f'Failed to load subject {subject_path} in worker') from e
