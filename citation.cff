@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use this software or its data, please cite the paper below."
+type: software
+title: "BiomechPriorVAE"
+abstract: "A learned state prior, trained on human gait kinematics and external forces, that closes the realism gap in physics-based predictive gait simulations."
+authors:
+  - family-names: Gambietz
+    given-names: Markus
+    affiliation: "Friedrich-Alexander-Universität Erlangen-Nürnberg"
+  - family-names: Zhao
+    given-names: Zhihao
+  - family-names: Balougias
+    given-names: Theodoros
+  - family-names: Wang
+    given-names: Xiang
+  - family-names: Koelewijn
+    given-names: Anne D.
+version: "1.0.0"
+date-released: "2026-11-02"
+license: MIT
+doi: 10.5281/zenodo.23207926
+repository-code: "https://github.com/gambimar/BiomechPriorVAE"
+keywords:
+  - biomechanics
+  - gait
+  - variational autoencoder
+  - OpenSim
+  - predictive simulation
+preferred-citation:
+  type: article
+  title: "Closing the realism gap in physics-based gait simulations with a learned state prior"
+  authors:
+    - family-names: Gambietz
+      given-names: Markus
+    - family-names: Zhao
+      given-names: Zhihao
+    - family-names: Balougias
+      given-names: Theodoros
+    - family-names: Wang
+      given-names: Xiang
+    - family-names: Koelewijn
+      given-names: Anne D.
+  journal: "arXiv preprint arXiv:2610.08506"
+  year: 2026
+  doi: "10.48550/arXiv.2610.08506"
